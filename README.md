@@ -5,7 +5,7 @@ This repository contains a full local RAG chatbot application with:
 - a TypeScript React frontend that matches the provided mockup layout
 - a FastAPI backend for chat, sessions, ingestion, preview, topics, and graph APIs
 - a local-first retrieval pipeline built on ChromaDB, SQLite, Ollama, and Celery
-- OCR support for scanned PDFs
+- Docling-based PDF parsing with OCR and table-structure extraction
 - topic clustering, a directed knowledge graph, chat memory, and optional web fallback
 
 The repository started from the phased plan in [rag_chatbot_phases.md](./rag_chatbot_phases.md) and the UI reference in [chatbot_ui_mockup.html](./chatbot_ui_mockup.html). The implementation now covers the full Phase 1-6 scope that was planned across those documents.
@@ -21,7 +21,7 @@ At a high level, the app lets you:
 - visualize topic relationships in a knowledge graph
 - persist chat sessions and retrieve memory from past conversations
 - fall back to web search when the local corpus is not enough
-- OCR scanned PDFs when there is no extractable embedded text
+- parse text, tables, and scanned PDF pages through Docling
 
 ## Current Feature Set
 
@@ -38,8 +38,8 @@ At a high level, the app lets you:
 
 ### Retrieval And Ingestion
 
-- PyMuPDF parsing for text-based PDFs
-- OCR fallback for scanned PDFs using `surya-ocr`
+- IBM Docling PDF parsing for text, layout, tables, and OCR
+- repeated margin header/footer cleanup using Docling block provenance
 - semantic chunking
 - LLM-first keyword and topic tag extraction with KeyBERT fallback
 - vector retrieval + BM25 + reciprocal rank fusion + reranking
@@ -101,7 +101,7 @@ Important service modules:
 - [history_service.py](./backend/app/services/history_service.py)
 - [topic_index_service.py](./backend/app/services/topic_index_service.py)
 - [kg_manager.py](./backend/app/services/kg_manager.py)
-- [ocr_service.py](./backend/app/services/ocr_service.py)
+- [docling_parser.py](./backend/app/services/docling_parser.py)
 - [query_rewrite_service.py](./backend/app/services/query_rewrite_service.py)
 - [web_search_service.py](./backend/app/services/web_search_service.py)
 
@@ -113,7 +113,7 @@ The app stores data locally inside [backend/data](./backend/data):
 - `chroma/`: ChromaDB vector store
 - `kg.pkl`: persisted directed knowledge graph
 - `uploads/`: uploaded PDF files
-- `ocr/`: OCR output artifacts
+- `docling-models/`: local Docling model artifacts used by parsing/OCR
 - `celery/`: filesystem transport directories for Celery
 
 Primary storage responsibilities:
@@ -163,7 +163,7 @@ Recommended local prerequisites:
 - Python `3.11.x`
 - Node.js `20+`
 - Ollama installed and running
-- enough RAM/disk for local embedding, reranking, and OCR model downloads
+- enough RAM/disk for local embedding, reranking, and Docling model downloads
 
 ## Ollama Models
 
@@ -210,8 +210,8 @@ The Celery worker is the **background ingestion engine**. It must be running whe
 
 The worker handles the full document processing pipeline:
 
-1. **Parsing** — Extracts text from each PDF page (via PyMuPDF)
-2. **OCR** — Falls back to Surya OCR for scanned/image-only pages
+1. **Parsing** — Converts each PDF through Docling with layout, OCR, and table structure enabled by default
+2. **Source mapping** — Stores Docling labels, block refs, bounding boxes, and source text for preview/highlighting
 3. **Chunking** — Splits extracted text into overlapping semantic chunks
 4. **Embedding** — Generates vector embeddings via Ollama and stores them in ChromaDB
 5. **Topic extraction** — Uses the LLM (with KeyBERT fallback) to generate topic tags
@@ -324,7 +324,7 @@ Useful backend scripts in [backend/scripts](./backend/scripts):
 - [run_celery_worker.py](./backend/scripts/run_celery_worker.py): starts the ingestion worker
 - [ingest_pdf.py](./backend/scripts/ingest_pdf.py): one-off ingest script
 - [generate_sample_pdf.py](./backend/scripts/generate_sample_pdf.py): generates a small sample PDF fixture
-- [generate_scanned_test_pdf.py](./backend/scripts/generate_scanned_test_pdf.py): generates an image-only scanned PDF fixture for OCR verification
+- [generate_scanned_test_pdf.py](./backend/scripts/generate_scanned_test_pdf.py): generates an image-only scanned PDF fixture for Docling OCR verification
 
 ## Environment Variables
 
@@ -339,8 +339,9 @@ Common environment variables:
 | `RAG_OLLAMA_CHAT_MODEL` | chat model | `gemma4:31b-cloud` |
 | `RAG_RERANKER_MODEL` | reranker model | `cross-encoder/ms-marco-MiniLM-L6-v2` |
 | `RAG_ENABLE_CROSS_SESSION_MEMORY` | enable cross-session memory | `true` |
-| `RAG_ENABLE_OCR` | enable OCR fallback | `true` |
-| `RAG_OCR_COMMAND` | OCR executable | `surya_ocr` |
+| `RAG_DOCLING_ARTIFACTS_DIR` | local Docling model artifact directory | `backend/data/docling-models` |
+| `RAG_DOCLING_OCR` | enable Docling OCR | `true` |
+| `RAG_DOCLING_TABLE_STRUCTURE` | enable Docling table reconstruction | `true` |
 | `RAG_WEB_SEARCH_BACKEND` | search backend | `duckduckgo` |
 | `RAG_WEB_SEARCH_REGION` | search region | `us-en` |
 | `RAG_WEB_SEARCH_MAX_RESULTS` | max web results | `4` |
@@ -365,20 +366,22 @@ The frontend generates and stores a stable local user id automatically in browse
 - separate chat memory
 - support cross-session memory per local user
 
-## Notes On OCR
+## Notes On Docling Parsing
 
-OCR is only needed when a PDF has no extractable embedded text.
+Docling is the document parser used by ingestion. It replaces the previous PyMuPDF plus Surya path.
 
-Current OCR path:
+Current parsing path:
 
-- ingestion first tries text extraction
-- if extracted content is effectively empty, OCR runs
-- OCR results are then chunked, embedded, and indexed like any other document
+- ingestion converts PDFs with Docling `DocumentConverter`
+- Docling OCR and table structure extraction are enabled by default
+- repeated marginal headers/footers are removed from Docling blocks before chunking
+- chunk metadata stores parser name, content labels, table flags, source refs, source text, and source block boxes
 
-Important dependency note:
+Important model artifact note:
 
-- `surya-ocr==0.17.1` is pinned with `transformers==4.57.3`
-- newer `transformers` 5.x builds can break Surya with `pad_token_id` errors
+- first run downloads Docling layout/table/OCR models into `RAG_DOCLING_ARTIFACTS_DIR`
+- the local artifacts directory avoids Hugging Face cache symlink issues on Windows
+- `RAG_ENABLE_OCR` is still accepted as a legacy fallback for `RAG_DOCLING_OCR`
 
 ## Design And UI Notes
 
@@ -400,8 +403,8 @@ The frontend intentionally separates:
 These are not necessarily bugs, but they are good to know:
 
 - topic labels are auto-generated from clustering and may look a little awkward on very small corpora
-- OCR adds noticeable time to ingestion because the model may need to process page images
-- first-time OCR runs can be slower due to model download and cache warmup
+- Docling adds noticeable time to ingestion because layout, table, and OCR models may process page images
+- first-time Docling runs can be slower due to model download and artifact warmup
 - if you run frontend and backend on non-default ports, set `VITE_API_BASE_URL` explicitly
 
 ## Troubleshooting
@@ -445,13 +448,14 @@ The backend already accepts local development origins by default, including arbi
 
 are still covered.
 
-### OCR Fails
+### Docling Parsing Or OCR Fails
 
 Check:
 
-- `surya_ocr` is installed and available
+- `docling` is installed from `backend/requirements.txt`
 - Python version is `3.11.x`
-- `transformers==4.57.3` is installed
+- `RAG_DOCLING_ARTIFACTS_DIR` is writable
+- first-run network access is available, or Docling models are already prefetched into the artifacts directory
 
 ### Duplicate Worker Or Server Processes
 

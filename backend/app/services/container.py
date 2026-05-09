@@ -5,13 +5,13 @@ from dataclasses import dataclass
 from app.core.chroma_store import ChromaStore
 from app.core.config import Settings
 from app.core.database import Database
+from app.services.docling_parser import DoclingDocumentParser
 from app.services.document_service import DocumentService
 from app.services.history_service import HistoryService
 from app.services.ingestion_dispatcher import IngestionDispatcher
 from app.services.ingestion_service import IngestionService
 from app.services.kg_manager import KgManager
 from app.services.keyword_service import KeywordService
-from app.services.ocr_service import OcrService
 from app.services.ollama_client import OllamaClient
 from app.services.query_rewrite_service import QueryRewriteService
 from app.services.rag_service import RagService
@@ -32,7 +32,7 @@ class ServiceContainer:
     history_service: HistoryService
     kg_manager: KgManager
     topic_index_service: TopicIndexService
-    ocr_service: OcrService
+    document_parser: DoclingDocumentParser
     ingestion_dispatcher: IngestionDispatcher
     query_rewrite_service: QueryRewriteService
     reranker_service: RerankerService
@@ -70,10 +70,10 @@ def build_container(settings: Settings) -> ServiceContainer:
         kg_manager=kg_manager,
         topic_collection_prefix=settings.topic_collection_prefix,
     )
-    ocr_service = OcrService(
-        enabled=settings.ocr_enabled,
-        command=settings.ocr_command,
-        output_dir=settings.ocr_output_dir,
+    document_parser = DoclingDocumentParser(
+        ocr_enabled=settings.docling_ocr_enabled,
+        table_structure_enabled=settings.docling_table_structure_enabled,
+        artifacts_path=settings.docling_artifacts_dir,
     )
     ingestion_dispatcher = IngestionDispatcher(settings=settings)
     reranker_service = RerankerService(settings.reranker_model)
@@ -99,7 +99,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         text_splitter=text_splitter,
         chroma_store=chroma_store,
         topic_index_service=topic_index_service,
-        ocr_service=ocr_service,
+        document_parser=document_parser,
     )
     rag_service = RagService(
         ollama_client=ollama_client,
@@ -123,7 +123,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         history_service=history_service,
         kg_manager=kg_manager,
         topic_index_service=topic_index_service,
-        ocr_service=ocr_service,
+        document_parser=document_parser,
         ingestion_dispatcher=ingestion_dispatcher,
         query_rewrite_service=query_rewrite_service,
         reranker_service=reranker_service,

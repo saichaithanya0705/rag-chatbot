@@ -23,6 +23,6 @@ def health(
         collection_name="all_chunks",
         indexed_chunks=indexed_chunks,
         ingestionMode=container.ingestion_dispatcher.mode,
-        ocrEnabled=container.ocr_service.enabled,
-        ocrAvailable=container.ocr_service.is_available(),
+        ocrEnabled=container.document_parser.ocr_enabled,
+        ocrAvailable=container.document_parser.is_available(),
     )

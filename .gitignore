@@ -19,6 +19,7 @@ backend/data/*.db
 backend/data/*.sqlite3
 backend/data/*.json
 backend/data/celery/
+backend/data/docling-models/
 backend/data/logs/
 backend/data/ocr/
 backend/data/uploads/

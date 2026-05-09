@@ -20,7 +20,6 @@ class Settings:
     celery_reply_dir: Path
     celery_control_dir: Path
     celery_processed_dir: Path
-    ocr_output_dir: Path
     ollama_base_url: str
     embed_model: str
     chat_model: str
@@ -31,8 +30,9 @@ class Settings:
     celery_queue_name: str
     celery_transport_role: str
     celery_task_always_eager: bool
-    ocr_enabled: bool
-    ocr_command: str
+    docling_artifacts_dir: Path
+    docling_ocr_enabled: bool
+    docling_table_structure_enabled: bool
     web_search_backend: str
     web_search_region: str
     web_search_max_results: int
@@ -62,6 +62,10 @@ def _resolve_allowed_origin_regex(raw_value: str | None) -> str:
     return candidate.replace("\\\\.", r"\.").replace("\\\\d", r"\d")
 
 
+def _env_bool(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).lower() in {"1", "true", "yes", "on"}
+
+
 def load_settings() -> Settings:
     backend_root = Path(__file__).resolve().parents[2]
     data_dir = backend_root / "data"
@@ -74,7 +78,12 @@ def load_settings() -> Settings:
     celery_reply_dir = celery_root / "reply"
     celery_control_dir = celery_root / "control"
     celery_processed_dir = celery_root / "processed"
-    ocr_output_dir = data_dir / "ocr"
+    raw_docling_artifacts_dir = os.getenv("RAG_DOCLING_ARTIFACTS_DIR")
+    docling_artifacts_dir = (
+        Path(raw_docling_artifacts_dir).expanduser()
+        if raw_docling_artifacts_dir
+        else data_dir / "docling-models"
+    )
 
     return Settings(
         project_name="Local RAG Chat Backend",
@@ -90,7 +99,6 @@ def load_settings() -> Settings:
         celery_reply_dir=celery_reply_dir,
         celery_control_dir=celery_control_dir,
         celery_processed_dir=celery_processed_dir,
-        ocr_output_dir=ocr_output_dir,
         ollama_base_url=os.getenv("RAG_OLLAMA_BASE_URL", "http://localhost:11434"),
         embed_model=os.getenv("RAG_OLLAMA_EMBED_MODEL", "andersc/qwen3-embedding:0.6b"),
         chat_model=os.getenv("RAG_OLLAMA_CHAT_MODEL", "gemma4:31b-cloud"),
@@ -115,8 +123,9 @@ def load_settings() -> Settings:
             "false",
         ).lower()
         in {"1", "true", "yes", "on"},
-        ocr_enabled=os.getenv("RAG_ENABLE_OCR", "true").lower() in {"1", "true", "yes", "on"},
-        ocr_command=os.getenv("RAG_OCR_COMMAND", "surya_ocr"),
+        docling_artifacts_dir=docling_artifacts_dir,
+        docling_ocr_enabled=_env_bool("RAG_DOCLING_OCR", os.getenv("RAG_ENABLE_OCR", "true")),
+        docling_table_structure_enabled=_env_bool("RAG_DOCLING_TABLE_STRUCTURE", "true"),
         web_search_backend=os.getenv("RAG_WEB_SEARCH_BACKEND", "duckduckgo"),
         web_search_region=os.getenv("RAG_WEB_SEARCH_REGION", "us-en"),
         web_search_max_results=int(os.getenv("RAG_WEB_SEARCH_MAX_RESULTS", "4")),
@@ -147,6 +156,6 @@ def ensure_runtime_directories(settings: Settings) -> None:
         settings.celery_reply_dir,
         settings.celery_control_dir,
         settings.celery_processed_dir,
-        settings.ocr_output_dir,
+        settings.docling_artifacts_dir,
     ):
         path.mkdir(parents=True, exist_ok=True)

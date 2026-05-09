@@ -32,6 +32,7 @@ class StoredChunk:
     text: str
     char_start: int | None = None
     char_end: int | None = None
+    source_text: str | None = None
 
 
 @dataclass(frozen=True)
@@ -773,6 +774,11 @@ class DocumentService:
             text=str(documents[0]),
             char_start=int(metadata["char_start"]) if metadata.get("char_start") is not None else None,
             char_end=int(metadata["char_end"]) if metadata.get("char_end") is not None else None,
+            source_text=(
+                str(metadata.get("source_text"))
+                if metadata.get("source_text") is not None and str(metadata.get("source_text")).strip()
+                else None
+            ),
         )
 
     def render_preview_html(
@@ -805,6 +811,8 @@ class DocumentService:
                 if chunk.char_start is not None and chunk.char_end is not None
                 else self._find_chunk_span(page_text, chunk.text)
             )
+            if match_span is None and chunk.source_text:
+                match_span = self._find_chunk_span(page_text, chunk.source_text)
             if match_span is not None:
                 match_start, match_end = match_span
                 highlighted = (

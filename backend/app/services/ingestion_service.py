@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import Counter
+import asyncio
 import json
 import logging
 import re
@@ -9,12 +9,10 @@ from pathlib import Path
 import unicodedata
 from uuid import uuid4
 
-import fitz
-
 from app.core.chroma_store import ChromaStore
 from app.services.document_service import DocumentService, RetrievalChunkCatalogEntry
+from app.services.docling_parser import DoclingDocumentParser, ParsedBlock
 from app.services.keyword_service import KeywordService
-from app.services.ocr_service import OcrService
 from app.services.ollama_client import OllamaClient
 from app.services.text_splitter import SemanticTextSplitter
 from app.services.topic_index_service import TopicIndexService
@@ -22,8 +20,6 @@ from app.services.topic_index_service import TopicIndexService
 
 logger = logging.getLogger(__name__)
 DEFAULT_EMBED_BATCH_SIZE = 96
-MARGIN_BAND_RATIO = 0.12
-REPEATED_MARGIN_MIN_PAGES = 2
 QUESTION_HEADER_PATTERN = re.compile(
     r"(?ims)(?:^|\n{1,2}|(?<=[.?!]))\s*(?:question\s+\d+[:.)-]*|\d{1,3}[.)]|q\s*[:.)-])\s*(?P<question>.*?(?:\?|[.:](?=\n{2,}|$)))"
 )
@@ -55,14 +51,6 @@ class IngestionResult:
 
 
 @dataclass(frozen=True)
-class PageBlock:
-    text: str
-    top: float
-    bottom: float
-    page_height: float
-
-
-@dataclass(frozen=True)
 class PageChunkDraft:
     text: str
     metadata: dict[str, object]
@@ -78,7 +66,7 @@ class IngestionService:
         text_splitter: SemanticTextSplitter,
         chroma_store: ChromaStore,
         topic_index_service: TopicIndexService,
-        ocr_service: OcrService,
+        document_parser: DoclingDocumentParser,
         collection_name: str = "all_chunks",
     ) -> None:
         self._document_service = document_service
@@ -87,7 +75,7 @@ class IngestionService:
         self._text_splitter = text_splitter
         self._chroma_store = chroma_store
         self._topic_index_service = topic_index_service
-        self._ocr_service = ocr_service
+        self._document_parser = document_parser
         self._collection_name = collection_name
         self._embed_batch_size = max(
             1,
@@ -133,34 +121,9 @@ class IngestionService:
         )
 
         try:
-            page_blocks = self._extract_page_blocks_by_page(pdf_path)
-            page_texts = [self._compose_page_text(blocks, set()) for blocks in page_blocks]
-            blank_page_indexes = [index for index, text in enumerate(page_texts) if not text.strip()]
-            if blank_page_indexes:
-                ocr_page_texts = await self._extract_page_texts_with_ocr(
-                    pdf_path,
-                    document_id=document_id,
-                    user_id=user_id,
-                )
-                for index in blank_page_indexes:
-                    if index < len(ocr_page_texts) and ocr_page_texts[index].strip():
-                        normalized_ocr_text = " ".join(ocr_page_texts[index].split())
-                        page_texts[index] = normalized_ocr_text
-                        page_blocks[index] = [
-                            PageBlock(
-                                text=normalized_ocr_text,
-                                top=0.0,
-                                bottom=1.0,
-                                page_height=1.0,
-                            )
-                        ]
-
-            repeated_margin_texts = self._repeated_margin_texts(page_blocks)
-            filtered_page_blocks = [
-                self._filter_page_blocks(blocks, repeated_margin_texts)
-                for blocks in page_blocks
-            ]
-            page_texts = [self._compose_page_text(blocks, repeated_margin_texts) for blocks in page_blocks]
+            parsed_document = await asyncio.to_thread(self._document_parser.parse, pdf_path)
+            page_texts = [page.text for page in parsed_document.pages]
+            page_blocks = [page.blocks for page in parsed_document.pages]
             chunking_threshold = None
             self._document_service.update_document_progress(
                 document_id,
@@ -176,11 +139,11 @@ class IngestionService:
             pending_chunk_metadatas: list[dict[str, object]] = []
             total_chunk_count = 0
             self._document_service.clear_document_content(document_id, user_id=user_id)
-            qa_document = self._is_question_answer_document(filtered_page_blocks)
+            qa_document = self._is_question_answer_document(page_blocks)
             carryover_question: str | None = None
 
             for page_number, (page_text, page_blocks_for_page) in enumerate(
-                zip(page_texts, filtered_page_blocks, strict=False),
+                zip(page_texts, page_blocks, strict=False),
                 start=1,
             ):
                 page_chunk_drafts, carryover_question = await self._build_page_chunk_drafts(
@@ -193,10 +156,19 @@ class IngestionService:
                 )
                 page_chunks = [draft.text for draft in page_chunk_drafts]
                 page_chunk_spans = self._chunk_spans_for_page(page_text, page_chunks)
+                page_block_spans = self._block_spans_for_page(page_text, page_blocks_for_page)
 
                 for chunk_index, draft in enumerate(page_chunk_drafts):
                     chunk_text = draft.text
                     chunk_start, chunk_end = page_chunk_spans[chunk_index]
+                    source_metadata = self._source_metadata_for_chunk(
+                        parser_name=parsed_document.parser_name,
+                        page_text=page_text,
+                        page_blocks=page_blocks_for_page,
+                        page_block_spans=page_block_spans,
+                        chunk_start=chunk_start,
+                        chunk_end=chunk_end,
+                    )
                     chunk_id = f"{document_id}:{page_number}:{chunk_index}"
                     pending_chunk_ids.append(chunk_id)
                     pending_chunk_texts.append(chunk_text)
@@ -210,6 +182,7 @@ class IngestionService:
                         "keywords": json.dumps([]),
                         "chunking_threshold": chunking_threshold,
                     }
+                    chunk_metadata.update(source_metadata)
                     chunk_metadata.update(draft.metadata)
                     if chunk_start is not None and chunk_end is not None:
                         chunk_metadata["char_start"] = chunk_start
@@ -304,29 +277,6 @@ class IngestionService:
             self._document_service.mark_document_error(document_id, str(error), user_id=user_id)
             raise
 
-    def _extract_page_texts(self, pdf_path: Path) -> list[str]:
-        page_blocks: list[list[PageBlock]] = []
-        with fitz.open(pdf_path) as document:
-            for page in document:
-                page_blocks.append(self._extract_page_blocks(page))
-        repeated_margin_texts = self._repeated_margin_texts(page_blocks)
-        return [self._compose_page_text(blocks, repeated_margin_texts) for blocks in page_blocks]
-
-    async def _extract_page_texts_with_ocr(
-        self,
-        pdf_path: Path,
-        *,
-        document_id: str,
-        user_id: str,
-    ) -> list[str]:
-        self._document_service.update_document_progress(
-            document_id,
-            user_id=user_id,
-            status="ocr",
-            progress=20,
-        )
-        return await self._ocr_service.extract_pdf_texts(pdf_path)
-
     async def _flush_chunk_batch(
         self,
         *,
@@ -370,90 +320,117 @@ class IngestionService:
         chunk_texts.clear()
         chunk_metadatas.clear()
 
-    @staticmethod
-    def _extract_page_blocks_by_page(pdf_path: Path) -> list[list[PageBlock]]:
-        page_blocks: list[list[PageBlock]] = []
-        with fitz.open(pdf_path) as document:
-            for page in document:
-                page_blocks.append(IngestionService._extract_page_blocks(page))
-        return page_blocks
-
     @classmethod
-    def _filter_page_blocks(
+    def _source_metadata_for_chunk(
         cls,
-        blocks: list[PageBlock],
-        repeated_margin_texts: set[str],
-    ) -> list[PageBlock]:
-        return [
-            block
-            for block in blocks
-            if not (
-                block.text in repeated_margin_texts
-                and (
-                    block.top <= block.page_height * MARGIN_BAND_RATIO
-                    or block.bottom >= block.page_height * (1 - MARGIN_BAND_RATIO)
-                )
-            )
+        *,
+        parser_name: str,
+        page_text: str,
+        page_blocks: list[ParsedBlock],
+        page_block_spans: list[tuple[int | None, int | None]],
+        chunk_start: int | None,
+        chunk_end: int | None,
+    ) -> dict[str, object]:
+        source_blocks = cls._source_blocks_for_chunk(
+            page_blocks=page_blocks,
+            page_block_spans=page_block_spans,
+            chunk_start=chunk_start,
+            chunk_end=chunk_end,
+        )
+        if not source_blocks:
+            source_blocks = [block for block in page_blocks if block.text.strip()]
+
+        content_labels = sorted({block.label for block in source_blocks if block.label})
+        source_text = cls._source_text_for_chunk(
+            page_text=page_text,
+            source_blocks=source_blocks,
+            chunk_start=chunk_start,
+            chunk_end=chunk_end,
+        )
+        source_refs = sorted(
+            {
+                str(block.source_ref)
+                for block in source_blocks
+                if block.source_ref is not None and str(block.source_ref).strip()
+            }
+        )
+        source_payload = [
+            {
+                "label": block.label,
+                "page": block.page_number,
+                "bbox": block.bbox,
+                "source_ref": block.source_ref,
+            }
+            for block in source_blocks
         ]
 
-    @staticmethod
-    def _extract_page_blocks(page: fitz.Page) -> list[PageBlock]:
-        blocks = page.get_text("blocks")
-        page_height = float(page.rect.height)
-        clean_blocks: list[PageBlock] = []
-
-        for block in blocks:
-            normalized_text = IngestionService._normalize_extracted_text(
-                block[4],
-                preserve_newlines=True,
-            )
-            if not normalized_text:
-                continue
-
-            clean_blocks.append(
-                PageBlock(
-                    text=normalized_text,
-                    top=float(block[1]),
-                    bottom=float(block[3]),
-                    page_height=page_height,
-                )
-            )
-
-        return clean_blocks
-
-    @classmethod
-    def _repeated_margin_texts(cls, page_blocks: list[list[PageBlock]]) -> set[str]:
-        if len(page_blocks) < REPEATED_MARGIN_MIN_PAGES:
-            return set()
-
-        repeated_counts: Counter[str] = Counter()
-        for blocks in page_blocks:
-            seen_on_page = {
-                block.text
-                for block in blocks
-                if block.top <= block.page_height * MARGIN_BAND_RATIO
-                or block.bottom >= block.page_height * (1 - MARGIN_BAND_RATIO)
-            }
-            repeated_counts.update(seen_on_page)
-
-        minimum_pages = max(REPEATED_MARGIN_MIN_PAGES, len(page_blocks) // 2)
+        page_numbers = [block.page_number for block in source_blocks] or [1]
         return {
-            text
-            for text, count in repeated_counts.items()
-            if text and count >= minimum_pages
+            "parser": parser_name,
+            "content_labels": json.dumps(content_labels),
+            "page_start": min(page_numbers),
+            "page_end": max(page_numbers),
+            "has_table": 1 if "table" in content_labels else 0,
+            "source_text": source_text,
+            "source_refs": json.dumps(source_refs),
+            "source_blocks": json.dumps(source_payload),
         }
 
-    @classmethod
-    def _compose_page_text(cls, blocks: list[PageBlock], repeated_margin_texts: set[str]) -> str:
-        kept_blocks = [block.text for block in cls._filter_page_blocks(blocks, repeated_margin_texts)]
-        return " ".join(kept_blocks)
+    @staticmethod
+    def _source_text_for_chunk(
+        *,
+        page_text: str,
+        source_blocks: list[ParsedBlock],
+        chunk_start: int | None,
+        chunk_end: int | None,
+    ) -> str:
+        if chunk_start is not None and chunk_end is not None:
+            return page_text[chunk_start:chunk_end]
+        return "\n\n".join(block.text for block in source_blocks if block.text.strip())
+
+    @staticmethod
+    def _source_blocks_for_chunk(
+        *,
+        page_blocks: list[ParsedBlock],
+        page_block_spans: list[tuple[int | None, int | None]],
+        chunk_start: int | None,
+        chunk_end: int | None,
+    ) -> list[ParsedBlock]:
+        if chunk_start is None or chunk_end is None:
+            return []
+
+        selected: list[ParsedBlock] = []
+        for block, (block_start, block_end) in zip(page_blocks, page_block_spans, strict=False):
+            if block_start is None or block_end is None:
+                continue
+            if block_end <= chunk_start or block_start >= chunk_end:
+                continue
+            selected.append(block)
+        return selected
+
+    @staticmethod
+    def _block_spans_for_page(
+        page_text: str,
+        page_blocks: list[ParsedBlock],
+    ) -> list[tuple[int | None, int | None]]:
+        spans: list[tuple[int | None, int | None]] = []
+        search_start = 0
+        for block in page_blocks:
+            start = page_text.find(block.text, search_start)
+            if start < 0:
+                spans.append((None, None))
+                continue
+            end = start + len(block.text)
+            spans.append((start, end))
+            search_start = end
+        return spans
 
     async def _build_page_chunk_drafts(
         self,
         *,
         page_number: int,
         page_text: str,
-        page_blocks: list[PageBlock],
+        page_blocks: list[ParsedBlock],
         threshold: float | None,
         qa_document: bool,
         carryover_question: str | None,
@@ -566,7 +543,7 @@ class IngestionService:
         return drafts, next_carryover_question
 
     @classmethod
-    def _is_question_answer_document(cls, page_blocks_by_page: list[list[PageBlock]]) -> bool:
+    def _is_question_answer_document(cls, page_blocks_by_page: list[list[ParsedBlock]]) -> bool:
         if not page_blocks_by_page:
             return False
         sample_pages = page_blocks_by_page[: min(len(page_blocks_by_page), 12)]
