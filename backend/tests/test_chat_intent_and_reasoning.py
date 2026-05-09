@@ -5,7 +5,7 @@ import unittest
 
 from app.services.answer_trace import build_answer_trace
 from app.services.ollama_client import OllamaGenerationResult
-from app.services.rag_service import RagService, RetrievedContext
+from app.services.rag_service import RagService, RetrievedChunk, RetrievedContext
 
 
 class _ExplodingDocumentService:
@@ -159,6 +159,43 @@ class ChatIntentAndReasoningTests(unittest.TestCase):
         self.assertEqual(answer, "A process is a program in execution.")
         self.assertEqual([citation.id for citation in citations], ["c1"])
         self.assertNotIn("Internal prompt", answer)
+
+    def test_docling_source_metadata_flows_into_pdf_citation(self) -> None:
+        context = _service()._pdf_context_from_chunk(
+            RetrievedChunk(
+                chunk_id="doc-1:1:0",
+                collection_id="all_chunks",
+                document_id="doc-1",
+                pdf_name="Operating System Notes.pdf",
+                page_number=1,
+                chunk_index=0,
+                text="Synthetic semantic chunk about a scheduling table.",
+                parser="docling",
+                content_labels=("section_header", "table"),
+                source_text="| Algorithm | Behavior |\n| Round Robin | Cycles through ready queue |",
+                source_refs=("#/tables/0",),
+                source_blocks=(
+                    {
+                        "label": "table",
+                        "page": 1,
+                        "bbox": {"l": 20.0, "t": 90.0, "r": 500.0, "b": 180.0},
+                        "source_ref": "#/tables/0",
+                    },
+                ),
+                has_table=True,
+            )
+        )
+
+        citation = RagService._citation_from_context(context).model_dump(by_alias=True)
+
+        self.assertEqual(citation["parser"], "docling")
+        self.assertEqual(citation["sourceLabels"], ["section_header", "table"])
+        self.assertEqual(citation["sourceRefs"], ["#/tables/0"])
+        self.assertEqual(citation["sourceText"], "| Algorithm | Behavior |\n| Round Robin | Cycles through ready queue |")
+        self.assertEqual(citation["sourceLocation"], "section header + table")
+        self.assertTrue(citation["hasTable"])
+        self.assertEqual(citation["sourceBlocks"][0]["bbox"]["t"], 90.0)
+        self.assertIn("Round Robin", citation["excerpt"])
 
     def test_model_thinking_on_returns_formatted_summary_not_raw_reasoning(self) -> None:
         ollama_client = _FakeOllamaClient()

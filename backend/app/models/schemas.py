@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -47,6 +49,13 @@ class CitationPayload(BaseModel):
     page: int | None = None
     chunk_index: int | None = Field(default=None, alias="chunkIndex")
     excerpt: str
+    parser: str | None = None
+    source_text: str | None = Field(default=None, alias="sourceText")
+    source_labels: list[str] = Field(default_factory=list, alias="sourceLabels")
+    source_refs: list[str] = Field(default_factory=list, alias="sourceRefs")
+    source_blocks: list[dict[str, Any]] = Field(default_factory=list, alias="sourceBlocks")
+    source_location: str | None = Field(default=None, alias="sourceLocation")
+    has_table: bool = Field(default=False, alias="hasTable")
     url: str | None = None
     title: str | None = None
 

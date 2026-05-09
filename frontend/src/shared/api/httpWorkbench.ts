@@ -222,6 +222,13 @@ interface CitationApiResponse {
   page?: number | null;
   chunkIndex?: number | null;
   excerpt?: string;
+  parser?: string | null;
+  sourceText?: string | null;
+  sourceLabels?: string[] | null;
+  sourceRefs?: string[] | null;
+  sourceBlocks?: Array<Record<string, unknown>> | null;
+  sourceLocation?: string | null;
+  hasTable?: boolean | null;
   url?: string | null;
   title?: string | null;
 }
@@ -318,6 +325,13 @@ function mapCitation(citation: CitationApiResponse): Citation {
     page: citation.page ?? undefined,
     chunkIndex: citation.chunkIndex ?? undefined,
     excerpt: citation.excerpt,
+    parser: citation.parser ?? undefined,
+    sourceText: citation.sourceText ?? undefined,
+    sourceLabels: citation.sourceLabels ?? undefined,
+    sourceRefs: citation.sourceRefs ?? undefined,
+    sourceBlocks: citation.sourceBlocks ?? undefined,
+    sourceLocation: citation.sourceLocation ?? undefined,
+    hasTable: citation.hasTable ?? undefined,
     url: citation.url ?? undefined,
     title: citation.title ?? undefined,
   };

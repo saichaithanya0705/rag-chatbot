@@ -25,6 +25,13 @@ export interface Citation {
   page?: number;
   chunkIndex?: number;
   excerpt?: string;
+  parser?: string;
+  sourceText?: string;
+  sourceLabels?: string[];
+  sourceRefs?: string[];
+  sourceBlocks?: Array<Record<string, unknown>>;
+  sourceLocation?: string;
+  hasTable?: boolean;
   url?: string;
   title?: string;
 }

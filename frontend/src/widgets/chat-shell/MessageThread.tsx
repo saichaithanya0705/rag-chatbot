@@ -25,6 +25,23 @@ function getWebCitationLabel(citation: Citation) {
   }
 }
 
+function getPdfCitationLabel(citation: Citation) {
+  const base = `${citation.pdfName ?? "PDF"} · p.${citation.page ?? "?"}`;
+  const sourceLocation = citation.sourceLocation ?? (citation.hasTable ? "table" : undefined);
+  return sourceLocation ? `${base} · ${sourceLocation}` : base;
+}
+
+function getPdfCitationTitle(citation: Citation) {
+  const sourceText = citation.sourceText ?? citation.excerpt;
+  if (!sourceText) {
+    return citation.pdfName ?? "Open PDF preview";
+  }
+
+  const sourceRefs =
+    citation.sourceRefs && citation.sourceRefs.length > 0 ? `\n${citation.sourceRefs.join(", ")}` : "";
+  return `${sourceText}${sourceRefs}`;
+}
+
 function getAnswerTraceItems(message: Message) {
   const items: string[] = [];
 
@@ -262,9 +279,9 @@ export function MessageThread() {
                   citation.kind === "pdf" ? (
                     <CitationChip
                       key={citation.id}
-                      label={`${citation.pdfName ?? "PDF"} · p.${citation.page ?? "?"}`}
+                      label={getPdfCitationLabel(citation)}
                       onClick={() => void actions.openPdfPreview(citation)}
-                      title={citation.excerpt ?? citation.pdfName ?? "Open PDF preview"}
+                      title={getPdfCitationTitle(citation)}
                       variant="pdf"
                     />
                   ) : (

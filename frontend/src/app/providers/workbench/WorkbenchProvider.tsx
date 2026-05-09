@@ -114,7 +114,7 @@ function toPreviewRequest(citation: Citation): PdfPreviewRequest {
     pdfName: citation.pdfName,
     page: citation.page,
     chunkIndex: citation.chunkIndex ?? 0,
-    excerpt: citation.excerpt,
+    excerpt: citation.sourceText ?? citation.excerpt,
   };
 }
 

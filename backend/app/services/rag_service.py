@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Sequence
+from typing import Any, Sequence
 
 import httpx
 
@@ -102,6 +103,12 @@ class RetrievedChunk:
     page_number: int
     chunk_index: int
     text: str
+    parser: str | None = None
+    content_labels: tuple[str, ...] = ()
+    source_text: str | None = None
+    source_refs: tuple[str, ...] = ()
+    source_blocks: tuple[dict[str, Any], ...] = ()
+    has_table: bool = False
 
 
 @dataclass
@@ -113,6 +120,12 @@ class CandidateChunk:
     page_number: int
     chunk_index: int
     text: str
+    parser: str | None = None
+    content_labels: tuple[str, ...] = ()
+    source_text: str | None = None
+    source_refs: tuple[str, ...] = ()
+    source_blocks: tuple[dict[str, Any], ...] = ()
+    has_table: bool = False
     fused_score: float = 0.0
     rerank_score: float | None = None
 
@@ -128,6 +141,13 @@ class RetrievedContext:
     pdf_name: str | None = None
     page_number: int | None = None
     chunk_index: int | None = None
+    parser: str | None = None
+    source_text: str | None = None
+    source_labels: tuple[str, ...] = ()
+    source_refs: tuple[str, ...] = ()
+    source_blocks: tuple[dict[str, Any], ...] = ()
+    source_location: str | None = None
+    has_table: bool = False
     url: str | None = None
     title: str | None = None
 
@@ -839,15 +859,7 @@ class RagService:
 
         return RetrievalResult(
             chunks=[
-                RetrievedChunk(
-                    chunk_id=candidate.chunk_id,
-                    collection_id=candidate.collection_id,
-                    document_id=candidate.document_id,
-                    pdf_name=candidate.pdf_name,
-                    page_number=candidate.page_number,
-                    chunk_index=candidate.chunk_index,
-                    text=candidate.text,
-                )
+                self._retrieved_chunk_from_candidate(candidate)
                 for candidate in selected_chunks
             ],
             top_rerank_score=selected_chunks[0].rerank_score if selected_chunks else None,
@@ -924,15 +936,7 @@ class RagService:
 
         return RetrievalResult(
             chunks=[
-                RetrievedChunk(
-                    chunk_id=candidate.chunk_id,
-                    collection_id=candidate.collection_id,
-                    document_id=candidate.document_id,
-                    pdf_name=candidate.pdf_name,
-                    page_number=candidate.page_number,
-                    chunk_index=candidate.chunk_index,
-                    text=candidate.text,
-                )
+                self._retrieved_chunk_from_candidate(candidate)
                 for candidate in selected_chunks
             ],
             top_rerank_score=selected_chunks[0].rerank_score if selected_chunks else None,
@@ -1006,6 +1010,7 @@ class RagService:
             user_id=user_id,
             limit=limit,
         )
+        metadata_by_chunk_id = self._metadata_by_chunk_id([row.chunk_id for row in rows])
         return [
             CandidateChunk(
                 chunk_id=row.chunk_id,
@@ -1015,9 +1020,33 @@ class RagService:
                 page_number=row.page_number,
                 chunk_index=row.chunk_index,
                 text=row.text,
+                **self._docling_source_metadata_from_metadata(
+                    metadata_by_chunk_id.get(row.chunk_id, {})
+                ),
             )
             for row in rows
         ]
+
+    def _metadata_by_chunk_id(self, chunk_ids: Sequence[str]) -> dict[str, dict[str, object]]:
+        if not chunk_ids:
+            return {}
+        try:
+            rows = self._chroma_store.collection(self._collection_name).get(
+                ids=list(chunk_ids),
+                include=["metadatas"],
+            )
+        except Exception:  # noqa: BLE001
+            LOGGER.warning("Could not load chunk metadata for lexical citations.", exc_info=True)
+            return {}
+
+        return {
+            str(chunk_id): dict(metadata or {})
+            for chunk_id, metadata in zip(
+                rows.get("ids", []),
+                rows.get("metadatas", []),
+                strict=False,
+            )
+        }
 
     def _merge_comparison_lexical_candidates(
         self,
@@ -1401,17 +1430,7 @@ class RagService:
                 continue
             seen_ids.add(preferred_candidate.chunk_id)
             contexts.append(
-                self._pdf_context_from_chunk(
-                    RetrievedChunk(
-                        chunk_id=preferred_candidate.chunk_id,
-                        collection_id=preferred_candidate.collection_id,
-                        document_id=preferred_candidate.document_id,
-                        pdf_name=preferred_candidate.pdf_name,
-                        page_number=preferred_candidate.page_number,
-                        chunk_index=preferred_candidate.chunk_index,
-                        text=preferred_candidate.text,
-                    )
-                )
+                self._pdf_context_from_chunk(self._retrieved_chunk_from_candidate(preferred_candidate))
             )
 
         return contexts
@@ -1526,6 +1545,7 @@ class RagService:
                     chunk_index=int(metadata["chunk_index"]),
                     text=str(text),
                     fused_score=self._rrf_score(rank),
+                    **self._docling_source_metadata_from_metadata(dict(metadata or {})),
                 )
             )
         return candidates
@@ -1564,15 +1584,7 @@ class RagService:
 
         return RetrievalResult(
             chunks=[
-                RetrievedChunk(
-                    chunk_id=candidate.chunk_id,
-                    collection_id=candidate.collection_id,
-                    document_id=candidate.document_id,
-                    pdf_name=candidate.pdf_name,
-                    page_number=candidate.page_number,
-                    chunk_index=candidate.chunk_index,
-                    text=candidate.text,
-                )
+                self._retrieved_chunk_from_candidate(candidate)
                 for candidate in reranked
             ],
             top_rerank_score=reranked[0].rerank_score if reranked else None,
@@ -1680,17 +1692,7 @@ class RagService:
         user_id: str,
     ) -> tuple[RetrievedContext, str] | None:
         lexical_contexts = [
-            self._pdf_context_from_chunk(
-                RetrievedChunk(
-                    chunk_id=candidate.chunk_id,
-                    collection_id=candidate.collection_id,
-                    document_id=candidate.document_id,
-                    pdf_name=candidate.pdf_name,
-                    page_number=candidate.page_number,
-                    chunk_index=candidate.chunk_index,
-                    text=candidate.text,
-                )
-            )
+            self._pdf_context_from_chunk(self._retrieved_chunk_from_candidate(candidate))
             for candidate in self._lexical_candidates_for_collection(
                 question,
                 self._collection_name if collection_id == "all-pdfs" else collection_id,
@@ -2029,17 +2031,7 @@ class RagService:
             context = pdf_id_lookup.get(match.group("id").strip())
             if context is None:
                 continue
-            by_key[context.id] = CitationPayload(
-                id=context.id,
-                kind="pdf",
-                document_id=context.document_id,
-                pdf_name=context.pdf_name,
-                page=context.page_number,
-                chunk_index=context.chunk_index,
-                excerpt=context.excerpt,
-                title=context.title,
-                url=context.url,
-            )
+            by_key[context.id] = self._citation_from_context(context)
 
         for match in LEGACY_PDF_CITATION_PATTERN.finditer(answer):
             pdf_name = match.group("pdf").strip()
@@ -2056,33 +2048,14 @@ class RagService:
                 context = self._best_page_context(answer, match.start(), page_contexts)
             if context is None:
                 continue
-            by_key[context.id] = CitationPayload(
-                id=context.id,
-                kind="pdf",
-                document_id=context.document_id,
-                pdf_name=context.pdf_name,
-                page=context.page_number,
-                chunk_index=context.chunk_index,
-                excerpt=context.excerpt,
-                title=context.title,
-                url=context.url,
-            )
+            by_key[context.id] = self._citation_from_context(context)
 
         for match in WEB_CITATION_PATTERN.finditer(answer):
             url = match.group("url").strip()
             context = web_lookup.get(url)
             if context is None:
                 continue
-            by_key[context.id] = CitationPayload(
-                id=context.id,
-                kind="web",
-                pdf_name=None,
-                page=None,
-                chunk_index=None,
-                excerpt=context.excerpt,
-                title=context.title,
-                url=context.url,
-            )
+            by_key[context.id] = self._citation_from_context(context)
 
         return list(by_key.values())
 
@@ -2107,19 +2080,112 @@ class RagService:
     def _rrf_score(rank: int) -> float:
         return 1.0 / (RRF_K + rank + 1)
 
+    @staticmethod
+    def _retrieved_chunk_from_candidate(candidate: CandidateChunk) -> RetrievedChunk:
+        return RetrievedChunk(
+            chunk_id=candidate.chunk_id,
+            collection_id=candidate.collection_id,
+            document_id=candidate.document_id,
+            pdf_name=candidate.pdf_name,
+            page_number=candidate.page_number,
+            chunk_index=candidate.chunk_index,
+            text=candidate.text,
+            parser=candidate.parser,
+            content_labels=candidate.content_labels,
+            source_text=candidate.source_text,
+            source_refs=candidate.source_refs,
+            source_blocks=candidate.source_blocks,
+            has_table=candidate.has_table,
+        )
+
     def _pdf_context_from_chunk(self, chunk: RetrievedChunk) -> RetrievedContext:
         context_id = chunk.chunk_id
+        excerpt_source = chunk.source_text or chunk.text
         return RetrievedContext(
             id=context_id,
             kind="pdf",
             label=f"[SourceID: {context_id}]",
             text=chunk.text,
-            excerpt=self._clean_context_snippet(chunk.text, max_chars=280),
+            excerpt=self._clean_context_snippet(excerpt_source, max_chars=280),
             document_id=chunk.document_id,
             pdf_name=chunk.pdf_name,
             page_number=chunk.page_number,
             chunk_index=chunk.chunk_index,
+            parser=chunk.parser,
+            source_text=chunk.source_text,
+            source_labels=chunk.content_labels,
+            source_refs=chunk.source_refs,
+            source_blocks=chunk.source_blocks,
+            source_location=self._source_location_label(chunk.content_labels),
+            has_table=chunk.has_table,
         )
+
+    @classmethod
+    def _docling_source_metadata_from_metadata(cls, metadata: dict[str, object]) -> dict[str, object]:
+        labels = tuple(cls._json_string_list(metadata.get("content_labels")))
+        source_refs = tuple(cls._json_string_list(metadata.get("source_refs")))
+        source_blocks = tuple(cls._json_dict_list(metadata.get("source_blocks")))
+        parser = cls._optional_metadata_text(metadata.get("parser"))
+        source_text = cls._optional_metadata_text(metadata.get("source_text"))
+        has_table = cls._metadata_bool(metadata.get("has_table")) or "table" in labels
+        return {
+            "parser": parser,
+            "content_labels": labels,
+            "source_text": source_text,
+            "source_refs": source_refs,
+            "source_blocks": source_blocks,
+            "has_table": has_table,
+        }
+
+    @staticmethod
+    def _optional_metadata_text(value: object) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @classmethod
+    def _json_string_list(cls, value: object) -> list[str]:
+        raw_items = cls._json_list(value)
+        return [str(item) for item in raw_items if str(item).strip()]
+
+    @classmethod
+    def _json_dict_list(cls, value: object) -> list[dict[str, Any]]:
+        raw_items = cls._json_list(value)
+        return [item for item in raw_items if isinstance(item, dict)]
+
+    @staticmethod
+    def _json_list(value: object) -> list[Any]:
+        if isinstance(value, list):
+            return value
+        if not isinstance(value, str) or not value.strip():
+            return []
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        return parsed if isinstance(parsed, list) else []
+
+    @staticmethod
+    def _metadata_bool(value: object) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return False
+        if isinstance(value, (int, float)):
+            return bool(value)
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+    @staticmethod
+    def _source_location_label(labels: Sequence[str]) -> str | None:
+        display_labels = [
+            label.replace("_", " ")
+            for label in labels
+            if label and label not in {"text", "paragraph"}
+        ]
+        if not display_labels:
+            return None
+        return " + ".join(display_labels[:3])
 
     def _select_contexts(
         self,
@@ -2455,6 +2521,13 @@ class RagService:
             page=context.page_number,
             chunk_index=context.chunk_index,
             excerpt=context.excerpt,
+            parser=context.parser,
+            source_text=context.source_text,
+            source_labels=list(context.source_labels),
+            source_refs=list(context.source_refs),
+            source_blocks=list(context.source_blocks),
+            source_location=context.source_location,
+            has_table=context.has_table,
             title=context.title,
             url=context.url,
         )
