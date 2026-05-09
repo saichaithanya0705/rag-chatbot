@@ -4,9 +4,15 @@
 .venv/
 .vera/
 0)
+__pycache__/
+*.py[cod]
+*.pyo
+*.tsbuildinfo
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/vite.config.d.ts
+frontend/vite.config.js
 backend/.venv/
 backend/data/chroma/
 backend/data/*.db
