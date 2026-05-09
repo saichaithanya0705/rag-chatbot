@@ -1,0 +1,176 @@
+.app {
+  display: flex;
+  height: 100dvh;
+  width: 100%;
+  border-radius: 0;
+  overflow: hidden;
+  background: var(--surface-base);
+  font-size: 14px;
+  color: var(--text-strong);
+  position: relative;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.stateShell {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top right, rgba(127, 119, 221, 0.08), transparent 28%),
+    var(--surface-base);
+}
+
+.stateCard {
+  width: min(100%, 460px);
+  padding: 28px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: var(--shadow-floating);
+}
+
+.stateTitle {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 1.75rem;
+  font-weight: 500;
+  line-height: 1.1;
+}
+
+.stateBody {
+  margin: 12px 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-md);
+}
+
+.stateAction {
+  min-height: 38px;
+  margin-top: 20px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-base);
+  color: var(--text-strong);
+  cursor: pointer;
+}
+
+.stateAction:hover {
+  background: var(--surface-soft);
+}
+
+.view {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.viewActive {
+  display: flex;
+}
+
+.iconBtn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: none;
+  border: 0.5px solid var(--border-strong);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.iconBtn:hover {
+  background: var(--surface-muted);
+}
+
+.iconBtn:focus-visible,
+.stateAction:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(127, 119, 221, 0.18);
+}
+
+.pipelineActive {
+  background: var(--surface-accent);
+  border-color: var(--accent-border);
+  color: var(--accent-ink);
+}
+
+.hamburgerBtn {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hamburgerBar {
+  display: block;
+  width: 14px;
+  height: 1.5px;
+  background: var(--text-muted);
+  border-radius: 2px;
+}
+
+@media (max-width: 960px) {
+  .app {
+    height: calc(100vh - 48px);
+    max-width: none;
+  }
+
+  .sidebar {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 4;
+    height: 100%;
+  }
+
+  .pdfPanelOpen {
+    position: absolute;
+    inset: auto 0 0 0;
+    width: 100%;
+    min-width: 100%;
+    height: 42%;
+    border-left: none;
+    border-top: 0.5px solid var(--border-soft);
+  }
+}
+
+@media (max-width: 720px) {
+  .app {
+    height: calc(100vh - 28px);
+  }
+
+  .stateShell {
+    padding: 16px;
+  }
+
+  .stateCard {
+    padding: 22px;
+  }
+
+  .chatTopbar,
+  .pipelineTopbar {
+    padding: 10px 12px;
+  }
+
+  .messages {
+    padding: 12px 12px 8px;
+  }
+
+  .inputArea {
+    padding: 10px 12px 12px;
+  }
+
+  .pipelineBody {
+    padding: 16px;
+  }
+}

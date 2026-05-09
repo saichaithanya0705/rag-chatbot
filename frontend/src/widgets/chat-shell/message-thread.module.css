@@ -1,0 +1,314 @@
+.msg {
+  display: flex;
+  flex-direction: column;
+  max-width: 72%;
+  animation: fadeSlideIn 300ms ease;
+}
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.msgUser {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.msgBot {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.bubble {
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-strong);
+}
+
+.bubble > :first-child {
+  margin-top: 0;
+}
+
+.bubble > :last-child {
+  margin-bottom: 0;
+}
+
+.bubble p {
+  margin: 0;
+}
+
+.bubble p + p,
+.bubble p + ul,
+.bubble p + ol,
+.bubble p + table,
+.bubble ul + p,
+.bubble ol + p,
+.bubble table + p,
+.bubble pre + p,
+.bubble blockquote + p {
+  margin-top: 10px;
+}
+
+.bubble h3 {
+  margin: 0;
+}
+
+.bubble h1 + p,
+.bubble h2 + p,
+.bubble h3 + p {
+  margin-top: 10px;
+}
+
+.bubble ul,
+.bubble ol {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.bubble li + li {
+  margin-top: 6px;
+}
+
+.bubble h1, .bubble h2, .bubble h3 {
+  font-family: var(--font-heading);
+  margin: 0;
+  font-weight: 600;
+}
+
+.bubble h1 { font-size: var(--font-md); }
+.bubble h2 { font-size: var(--font-base); }
+.bubble h3 { font-size: var(--font-sm); }
+
+.bubble strong {
+  font-weight: 600;
+}
+
+.bubble em {
+  font-style: italic;
+}
+
+.bubble a {
+  color: var(--accent-ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.bubble code {
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 12px;
+  background: var(--surface-muted);
+  border: 0.5px solid var(--border-soft);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.bubble pre {
+  overflow-x: auto;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 0.5px solid var(--border-soft);
+  background: var(--surface-soft);
+}
+
+.bubble pre code {
+  display: block;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  white-space: pre-wrap;
+}
+
+.bubble table {
+  width: 100%;
+  margin: 10px 0 0;
+  border-collapse: collapse;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.bubble th,
+.bubble td {
+  padding: 6px 8px;
+  border: 0.5px solid var(--border-soft);
+  text-align: left;
+  vertical-align: top;
+}
+
+.bubble th {
+  background: var(--surface-soft);
+  font-weight: 600;
+}
+
+.bubble blockquote {
+  margin: 10px 0 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-muted);
+}
+
+.msgUser .bubble {
+  background: var(--accent);
+  color: var(--surface-accent);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.msgBot .bubble {
+  background: var(--surface-muted);
+  border-radius: 12px;
+  border: 0.5px solid var(--border-soft);
+  box-shadow: var(--shadow-soft);
+}
+
+.msgUser .bubble code {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.msgUser .bubble a {
+  color: var(--surface-accent);
+}
+
+.msgUser .bubble pre {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(238, 237, 254, 0.24);
+}
+
+.thinkingBubble {
+  color: var(--text-subtle-aa);
+  font-style: italic;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.toolCall {
+  margin-bottom: 6px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 0.5px solid var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.toolCallSummary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.toolCallSummary::-webkit-details-marker {
+  display: none;
+}
+
+.toolCallLabel {
+  display: inline-flex;
+  color: var(--text-subtle-aa);
+}
+
+.toolCallBody {
+  margin-top: 6px;
+  color: var(--text-subtle-aa);
+}
+
+.toolCallItem {
+  margin: 0;
+}
+
+.toolCallItem + .toolCallItem {
+  margin-top: 4px;
+}
+
+.webSearchUsed {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 6px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: var(--warning-surface);
+  color: var(--warning-ink);
+  font-size: 11px;
+}
+
+.citations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.assistantSignals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.memoryBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(127, 119, 221, 0.12);
+  color: var(--accent-ink);
+  font-size: 11px;
+}
+
+.sessionWarning {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 0.5px solid rgba(239, 159, 39, 0.28);
+  background: var(--warning-surface);
+  color: var(--warning-ink);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.modelThinkingBody {
+  font-family: var(--font-body);
+  font-size: var(--font-xs);
+  color: var(--text-subtle-aa);
+  line-height: 1.55;
+}
+
+.modelThinkingBody :global(h1),
+.modelThinkingBody :global(h2),
+.modelThinkingBody :global(h3),
+.modelThinkingBody :global(p),
+.modelThinkingBody :global(ul),
+.modelThinkingBody :global(ol) {
+  margin: 0 0 8px;
+}
+
+.modelThinkingBody :global(ul),
+.modelThinkingBody :global(ol) {
+  padding-left: 18px;
+}
+
+.modelThinkingBody :global(li + li) {
+  margin-top: 5px;
+}
+
+@media (max-width: 720px) {
+  .msg {
+    max-width: 92%;
+  }
+}

@@ -1,0 +1,470 @@
+# Local RAG Chatbot Workspace
+
+This repository contains a full local RAG chatbot application with:
+
+- a TypeScript React frontend that matches the provided mockup layout
+- a FastAPI backend for chat, sessions, ingestion, preview, topics, and graph APIs
+- a local-first retrieval pipeline built on ChromaDB, SQLite, Ollama, and Celery
+- OCR support for scanned PDFs
+- topic clustering, a directed knowledge graph, chat memory, and optional web fallback
+
+The repository started from the phased plan in [rag_chatbot_phases.md](./rag_chatbot_phases.md) and the UI reference in [chatbot_ui_mockup.html](./chatbot_ui_mockup.html). The implementation now covers the full Phase 1-6 scope that was planned across those documents.
+
+## What The App Does
+
+At a high level, the app lets you:
+
+- upload PDFs into a local knowledge base
+- ask questions in a chat UI with streaming responses
+- cite exact PDF passages and open them in a preview panel
+- organize retrieval by topic collections
+- visualize topic relationships in a knowledge graph
+- persist chat sessions and retrieve memory from past conversations
+- fall back to web search when the local corpus is not enough
+- OCR scanned PDFs when there is no extractable embedded text
+
+## Current Feature Set
+
+### Chat
+
+- persistent sessions with auto-generated titles
+- grouped session list in the sidebar
+- streaming assistant replies
+- single-flight send protection while a model response is in progress
+- safe rich-text message rendering for paragraphs, lists, headings, inline code, and fenced code blocks
+- citation chips for PDF and web sources
+- collection-scoped retrieval
+- web-search toggle
+
+### Retrieval And Ingestion
+
+- PyMuPDF parsing for text-based PDFs
+- OCR fallback for scanned PDFs using `surya-ocr`
+- semantic chunking
+- LLM-first keyword and topic tag extraction with KeyBERT fallback
+- vector retrieval + BM25 + reciprocal rank fusion + reranking
+- query rewriting for follow-up questions
+- per-topic Chroma collections
+- topic reclustering
+- directed knowledge graph edges
+- worker-backed ingestion through Celery using a filesystem transport
+
+### Memory
+
+- SQLite-backed session/message persistence
+- vectorized chat memory in a dedicated `chat_history` collection
+- same-session retrieval memory
+- cross-session memory support keyed by `x-user-id`
+
+### Pipeline UI
+
+- file list with chunk counts, topic chips, and overlap summaries
+- upload flow with live status progression
+- manual recluster action
+- knowledge graph view
+- PDF preview panel with highlighted cited text
+
+## Architecture
+
+### Frontend
+
+The frontend is a route-based React app with a clear separation between app shell, page layer, widgets, and shared utilities:
+
+- [App.tsx](./frontend/src/app/App.tsx)
+- [router.tsx](./frontend/src/app/router.tsx)
+- [WorkbenchProvider.tsx](./frontend/src/app/providers/workbench/WorkbenchProvider.tsx)
+- [httpWorkbench.ts](./frontend/src/shared/api/httpWorkbench.ts)
+- [types.ts](./frontend/src/shared/api/types.ts)
+
+The main widget areas are:
+
+- [chat-shell](./frontend/src/widgets/chat-shell)
+- [pipeline-shell](./frontend/src/widgets/pipeline-shell)
+- [pdf-viewer](./frontend/src/widgets/pdf-viewer)
+- [workbench-frame](./frontend/src/widgets/workbench-frame)
+
+### Backend
+
+The backend is a FastAPI app with routers and service modules separated by responsibility:
+
+- [main.py](./backend/app/main.py)
+- [routers](./backend/app/routers)
+- [services](./backend/app/services)
+- [schemas.py](./backend/app/models/schemas.py)
+- [config.py](./backend/app/core/config.py)
+- [database.py](./backend/app/core/database.py)
+
+Important service modules:
+
+- [rag_service.py](./backend/app/services/rag_service.py)
+- [ingestion_service.py](./backend/app/services/ingestion_service.py)
+- [history_service.py](./backend/app/services/history_service.py)
+- [topic_index_service.py](./backend/app/services/topic_index_service.py)
+- [kg_manager.py](./backend/app/services/kg_manager.py)
+- [ocr_service.py](./backend/app/services/ocr_service.py)
+- [query_rewrite_service.py](./backend/app/services/query_rewrite_service.py)
+- [web_search_service.py](./backend/app/services/web_search_service.py)
+
+## Storage Model
+
+The app stores data locally inside [backend/data](./backend/data):
+
+- `app.db`: SQLite data for sessions, messages, ingested documents, and page text
+- `chroma/`: ChromaDB vector store
+- `kg.pkl`: persisted directed knowledge graph
+- `uploads/`: uploaded PDF files
+- `ocr/`: OCR output artifacts
+- `celery/`: filesystem transport directories for Celery
+
+Primary storage responsibilities:
+
+- SQLite holds session metadata, messages, PDF metadata, and page text
+- ChromaDB holds chunk embeddings, topic collections, and chat memory embeddings
+- NetworkX holds the directed topic graph and is serialized to `kg.pkl`
+
+## Repository Layout
+
+```text
+chat/
+|-- backend/
+|   |-- app/
+|   |   |-- core/
+|   |   |-- models/
+|   |   |-- routers/
+|   |   |-- services/
+|   |   `-- tasks/
+|   |-- data/
+|   |-- scripts/
+|   |-- requirements.txt
+|   `-- README.md
+|-- frontend/
+|   |-- src/
+|   |   |-- app/
+|   |   |-- pages/
+|   |   |-- shared/
+|   |   `-- widgets/
+|   |-- scripts/
+|   `-- package.json
+|-- chatbot_ui_mockup.html
+|-- rag_chatbot_plan.md
+`-- rag_chatbot_phases.md
+```
+
+## Prerequisites
+
+This project has been verified on Windows with:
+
+- Python `3.11.9`
+- Node.js with `npm`
+- Ollama running locally
+
+Recommended local prerequisites:
+
+- Python `3.11.x`
+- Node.js `20+`
+- Ollama installed and running
+- enough RAM/disk for local embedding, reranking, and OCR model downloads
+
+## Ollama Models
+
+The backend defaults are currently:
+
+- embedding model: `andersc/qwen3-embedding:0.6b`
+- chat model: `gemma4:31b-cloud`
+
+Pull them before starting the app:
+
+```powershell
+ollama pull andersc/qwen3-embedding:0.6b
+ollama pull gemma4:31b-cloud
+```
+
+You can verify model availability with:
+
+```powershell
+cd D:\projects\chat\backend
+.venv\Scripts\python scripts\verify_models.py
+```
+
+## Quick Start
+
+### 1. Backend Setup
+
+```powershell
+cd D:\projects\chat\backend
+py -3.11 -m venv .venv
+.venv\Scripts\python -m pip install --upgrade pip
+.venv\Scripts\python -m pip install -r requirements.txt
+```
+
+### 2. Frontend Setup
+
+```powershell
+cd D:\projects\chat\frontend
+npm install
+```
+
+### 3. Start The Celery Worker
+
+The Celery worker is the **background ingestion engine**. It must be running whenever you want to upload and index new PDFs. Without it, uploaded files will stay stuck at "Queued" indefinitely.
+
+The worker handles the full document processing pipeline:
+
+1. **Parsing** — Extracts text from each PDF page (via PyMuPDF)
+2. **OCR** — Falls back to Surya OCR for scanned/image-only pages
+3. **Chunking** — Splits extracted text into overlapping semantic chunks
+4. **Embedding** — Generates vector embeddings via Ollama and stores them in ChromaDB
+5. **Topic extraction** — Uses the LLM (with KeyBERT fallback) to generate topic tags
+6. **Clustering** — Assigns documents to topic collections
+7. **Knowledge graph** — Builds directed edges between related topics
+
+This runs as a separate process so the API server stays responsive during heavy ingestion. No Redis or RabbitMQ is required — the project uses a local filesystem transport.
+
+> **Note:** If you only need to chat with already-indexed documents, the worker is not required. But any new uploads will not be processed without it.
+
+```powershell
+cd D:\projects\chat\backend
+.venv\Scripts\python scripts\run_celery_worker.py
+```
+
+### 4. Start The API
+
+Default local run:
+
+```powershell
+cd D:\projects\chat\backend
+.venv\Scripts\python -m uvicorn app.main:app --app-dir D:\projects\chat\backend --host 127.0.0.1 --port 8000
+```
+
+### 5. Start The Frontend
+
+If the backend is on the default `8000` port:
+
+```powershell
+cd D:\projects\chat\frontend
+npm run dev -- --host 127.0.0.1 --port 5173
+```
+
+If you want to run against a custom backend port, set `VITE_API_BASE_URL` first:
+
+```powershell
+cd D:\projects\chat\frontend
+$env:VITE_API_BASE_URL = "http://127.0.0.1:8002"
+npm run dev -- --host 127.0.0.1 --port 4177
+```
+
+Then open:
+
+- [http://127.0.0.1:5173/chat](http://127.0.0.1:5173/chat) for the default setup
+- or the custom frontend URL you started
+
+## Production Build
+
+Frontend production build:
+
+```powershell
+cd D:\projects\chat\frontend
+npm run build
+```
+
+The frontend build also generates static route entrypoints for direct navigation:
+
+- `dist/chat/index.html`
+- `dist/pipeline/index.html`
+- `dist/404.html`
+
+That route generation is handled by [generate-static-routes.mjs](./frontend/scripts/generate-static-routes.mjs).
+
+Backend sanity check:
+
+```powershell
+cd D:\projects\chat\backend
+.venv\Scripts\python -m compileall app scripts
+```
+
+## API Overview
+
+Base prefix: `/api`
+
+### System
+
+- `GET /api/system/health`
+
+### Sessions
+
+- `GET /api/sessions`
+- `POST /api/sessions`
+- `GET /api/sessions/{session_id}`
+- `DELETE /api/sessions/{session_id}`
+
+### Chat
+
+- `POST /api/chat/query`
+- `POST /api/chat/stream`
+
+### Documents
+
+- `GET /api/documents`
+- `POST /api/documents/upload`
+- `DELETE /api/documents/{document_id}`
+- `GET /api/documents/preview`
+
+### Topics And Graph
+
+- `GET /api/topics`
+- `POST /api/topics/recluster`
+- `GET /api/topics/graph`
+- `GET /api/kg/graph`
+
+## Scripts
+
+Useful backend scripts in [backend/scripts](./backend/scripts):
+
+- [verify_models.py](./backend/scripts/verify_models.py): checks embeddings and chat generation against Ollama
+- [run_celery_worker.py](./backend/scripts/run_celery_worker.py): starts the ingestion worker
+- [ingest_pdf.py](./backend/scripts/ingest_pdf.py): one-off ingest script
+- [generate_sample_pdf.py](./backend/scripts/generate_sample_pdf.py): generates a small sample PDF fixture
+- [generate_scanned_test_pdf.py](./backend/scripts/generate_scanned_test_pdf.py): generates an image-only scanned PDF fixture for OCR verification
+
+## Environment Variables
+
+The main backend configuration lives in [config.py](./backend/app/core/config.py).
+
+Common environment variables:
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `RAG_OLLAMA_BASE_URL` | Ollama base URL | `http://localhost:11434` |
+| `RAG_OLLAMA_EMBED_MODEL` | embedding model | `andersc/qwen3-embedding:0.6b` |
+| `RAG_OLLAMA_CHAT_MODEL` | chat model | `gemma4:31b-cloud` |
+| `RAG_RERANKER_MODEL` | reranker model | `cross-encoder/ms-marco-MiniLM-L6-v2` |
+| `RAG_ENABLE_CROSS_SESSION_MEMORY` | enable cross-session memory | `true` |
+| `RAG_ENABLE_OCR` | enable OCR fallback | `true` |
+| `RAG_OCR_COMMAND` | OCR executable | `surya_ocr` |
+| `RAG_WEB_SEARCH_BACKEND` | search backend | `duckduckgo` |
+| `RAG_WEB_SEARCH_REGION` | search region | `us-en` |
+| `RAG_WEB_SEARCH_MAX_RESULTS` | max web results | `4` |
+| `RAG_WEB_SEARCH_SCORE_THRESHOLD` | fallback threshold | `0.3` |
+| `RAG_ALLOWED_ORIGINS` | explicit CORS origins | local defaults |
+| `RAG_ALLOWED_ORIGIN_REGEX` | regex CORS matcher | local host/port regex |
+| `RAG_CELERY_QUEUE` | ingestion queue name | `rag_ingestion` |
+
+Frontend environment variable:
+
+| Variable | Purpose |
+|---|---|
+| `VITE_API_BASE_URL` | backend base URL for the frontend |
+
+## Request Context And User Identity
+
+The backend reads `x-user-id` from request headers in [dependencies.py](./backend/app/dependencies.py).
+
+The frontend generates and stores a stable local user id automatically in browser storage, which is used to:
+
+- separate session lists
+- separate chat memory
+- support cross-session memory per local user
+
+## Notes On OCR
+
+OCR is only needed when a PDF has no extractable embedded text.
+
+Current OCR path:
+
+- ingestion first tries text extraction
+- if extracted content is effectively empty, OCR runs
+- OCR results are then chunked, embedded, and indexed like any other document
+
+Important dependency note:
+
+- `surya-ocr==0.17.1` is pinned with `transformers==4.57.3`
+- newer `transformers` 5.x builds can break Surya with `pad_token_id` errors
+
+## Design And UI Notes
+
+The UI implementation was built to preserve the supplied mockup layout:
+
+- the structural reference is [chatbot_ui_mockup.html](./chatbot_ui_mockup.html)
+- the React shell lives in [workbench-frame](./frontend/src/widgets/workbench-frame)
+- routes are limited to `/chat` and `/pipeline`
+
+The frontend intentionally separates:
+
+- data access
+- application state
+- page-level composition
+- reusable visual widgets
+
+## Known Characteristics
+
+These are not necessarily bugs, but they are good to know:
+
+- topic labels are auto-generated from clustering and may look a little awkward on very small corpora
+- OCR adds noticeable time to ingestion because the model may need to process page images
+- first-time OCR runs can be slower due to model download and cache warmup
+- if you run frontend and backend on non-default ports, set `VITE_API_BASE_URL` explicitly
+
+## Troubleshooting
+
+### Frontend Says `Failed to fetch`
+
+Usually one of these is true:
+
+- the backend is not running
+- the frontend is pointing at the wrong API base URL
+- you started the backend on a non-default port but did not set `VITE_API_BASE_URL`
+
+Check:
+
+```powershell
+curl http://127.0.0.1:8000/api/system/health
+```
+
+Or for a custom port:
+
+```powershell
+curl http://127.0.0.1:8002/api/system/health
+```
+
+### Direct Route Open Returns 404
+
+Use the production build output generated by `npm run build`, which writes:
+
+- `dist/chat/index.html`
+- `dist/pipeline/index.html`
+- `dist/404.html`
+
+This is required for direct-open static hosting of `/chat` and `/pipeline`.
+
+### CORS Problems On Localhost Or 127.0.0.1
+
+The backend already accepts local development origins by default, including arbitrary local ports through the configured regex. If you override CORS settings manually, make sure both:
+
+- `localhost`
+- `127.0.0.1`
+
+are still covered.
+
+### OCR Fails
+
+Check:
+
+- `surya_ocr` is installed and available
+- Python version is `3.11.x`
+- `transformers==4.57.3` is installed
+
+### Duplicate Worker Or Server Processes
+
+This project uses long-running local processes. If you restart things repeatedly during development, check for stale processes before starting new ones.
+
+Typical processes to watch:
+
+- `python.exe` for `uvicorn`
+- `python.exe` for `run_celery_worker.py`
+- `node.exe` for Vite
+
+## References
+
+- phased build reference: [rag_chatbot_phases.md](./rag_chatbot_phases.md)
+- technical plan: [rag_chatbot_plan.md](./rag_chatbot_plan.md)
+- UI source reference: [chatbot_ui_mockup.html](./chatbot_ui_mockup.html)

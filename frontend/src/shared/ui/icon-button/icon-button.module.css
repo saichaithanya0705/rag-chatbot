@@ -1,0 +1,30 @@
+.button {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.button:hover {
+  background: var(--surface-muted);
+  color: var(--text-strong);
+  transform: translateY(-1px);
+}
+
+.active {
+  background: var(--surface-accent);
+  color: var(--accent-ink);
+  border-color: var(--accent-border);
+}
+

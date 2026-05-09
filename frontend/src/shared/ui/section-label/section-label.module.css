@@ -1,0 +1,9 @@
+.label {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-strong);
+  font-size: var(--font-base);
+  font-weight: 600;
+  line-height: 1.2;
+  margin: 0;
+}

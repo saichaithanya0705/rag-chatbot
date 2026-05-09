@@ -1,0 +1,144 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text-strong);
+  background: var(--surface-gradient-warm);
+  /* Smooth scrollbars for Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-soft) transparent;
+}
+
+body,
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button,
+input,
+textarea,
+select {
+  color: inherit;
+}
+
+img,
+svg {
+  display: block;
+}
+
+button {
+  border: none;
+  background: transparent;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+#root {
+  width: 100%;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Base selection color */
+::selection {
+  background: var(--surface-accent);
+  color: var(--accent-ink);
+}
+
+/* Custom Webkit Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-soft);
+  border-radius: var(--radius-pill);
+}
+
+/* Skip Nav Style */
+.skip-nav {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--accent);
+  color: white;
+  padding: 8px 16px;
+  z-index: 9999;
+  transition: top var(--transition-medium);
+}
+.skip-nav:focus {
+  top: 0;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+:focus-visible {
+  outline: 2px solid rgba(127, 119, 221, 0.56);
+  outline-offset: 2px;
+}
+
+.route-fallback-shell {
+  min-height: calc(100vh - 48px);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.route-fallback-card {
+  width: min(100%, 420px);
+  padding: 28px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: var(--shadow-floating);
+}
+
+.route-fallback-card h1 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 1.75rem;
+  font-weight: 500;
+}
+
+.route-fallback-card p {
+  margin: 12px 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-md);
+}
+
+@media (max-width: 720px) {
+  .route-fallback-card {
+    padding: 24px;
+  }
+}

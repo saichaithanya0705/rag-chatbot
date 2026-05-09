@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Chatbot UI Mockup</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #f5f5f0;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; padding: 24px;
+}
+.app {
+  display: flex; height: 700px; width: 100%; max-width: 1100px;
+  border: 0.5px solid #d3d1c7; border-radius: 12px;
+  overflow: hidden; background: #ffffff;
+  font-size: 14px; color: #2c2c2a; position: relative;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 220px; min-width: 220px;
+  border-right: 0.5px solid #d3d1c7;
+  display: flex; flex-direction: column;
+  background: #f1efe8;
+  transition: width .22s ease, min-width .22s ease;
+  overflow: hidden;
+}
+.sidebar.collapsed { width: 0; min-width: 0; border-right: none; }
+.sidebar-header { padding: 14px 14px 10px; border-bottom: 0.5px solid #d3d1c7; }
+.new-chat-btn {
+  width: 100%; padding: 8px 12px;
+  background: #ffffff; border: 0.5px solid #b4b2a9;
+  border-radius: 8px; color: #2c2c2a;
+  font-size: 13px; cursor: pointer;
+  display: flex; align-items: center; gap: 8px; white-space: nowrap;
+}
+.new-chat-btn:hover { background: #e8e6df; }
+.sidebar-scroll { flex: 1; overflow-y: auto; padding: 8px 0; }
+.date-group {
+  padding: 6px 14px 2px; font-size: 11px; font-weight: 500;
+  color: #888780; text-transform: uppercase; letter-spacing: .04em;
+}
+.session {
+  padding: 7px 14px; cursor: pointer;
+  font-size: 13px; color: #5f5e5a;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.session:hover { background: #ffffff; color: #2c2c2a; }
+.session.active {
+  background: #ffffff; color: #2c2c2a;
+  font-weight: 500; border-left: 2px solid #7F77DD; padding-left: 12px;
+}
+
+/* Shared icon btn */
+.icon-btn {
+  width: 30px; height: 30px; border-radius: 8px;
+  background: none; border: 0.5px solid #b4b2a9;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; color: #5f5e5a;
+}
+.icon-btn:hover { background: #f1efe8; }
+.icon-btn.pipeline-active { background: #EEEDFE; border-color: #AFA9EC; color: #3C3489; }
+
+/* Topbar */
+.chat-topbar {
+  padding: 10px 16px; border-bottom: 0.5px solid #d3d1c7;
+  display: flex; align-items: center; gap: 10px;
+}
+.collection-label { font-size: 12px; color: #888780; }
+.collection-select {
+  padding: 5px 10px; border: 0.5px solid #b4b2a9;
+  border-radius: 8px; font-size: 13px;
+  background: #ffffff; color: #2c2c2a; cursor: pointer;
+}
+.topbar-spacer { flex: 1; }
+.web-toggle-wrap { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #888780; }
+.toggle-track {
+  position: relative; width: 30px; height: 17px;
+  background: #b4b2a9; border-radius: 9px;
+  cursor: pointer; transition: background .2s;
+}
+.toggle-track.on { background: #7F77DD; }
+.toggle-knob {
+  position: absolute; top: 2px; left: 2px;
+  width: 13px; height: 13px;
+  background: #ffffff; border-radius: 50%; transition: transform .2s;
+}
+.toggle-track.on .toggle-knob { transform: translateX(13px); }
+.offline-badge {
+  font-size: 11px; background: #faeeda;
+  color: #854f0b; border-radius: 8px;
+  padding: 2px 7px; display: none;
+}
+.offline-badge.show { display: inline; }
+
+/* Messages */
+.messages {
+  flex: 1; overflow-y: auto;
+  padding: 16px 16px 8px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.msg { display: flex; flex-direction: column; max-width: 88%; }
+.msg.user { align-self: flex-end; align-items: flex-end; }
+.msg.bot  { align-self: flex-start; align-items: flex-start; }
+.bubble { padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.6; color: #2c2c2a; }
+.msg.user .bubble { background: #7F77DD; color: #EEEDFE; border-bottom-right-radius: 4px; }
+.msg.bot  .bubble { background: #f1efe8; border-bottom-left-radius: 4px; border: 0.5px solid #d3d1c7; }
+.citations { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.cite-chip {
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 9px; background: #f1efe8;
+  border: 0.5px solid #b4b2a9; border-radius: 20px;
+  font-size: 11px; color: #5f5e5a; cursor: pointer; white-space: nowrap;
+}
+.cite-chip:hover { background: #EEEDFE; border-color: #AFA9EC; color: #3C3489; }
+.cite-chip svg { width: 12px; height: 12px; flex-shrink: 0; }
+
+/* Input */
+.input-area { padding: 10px 16px 14px; border-top: 0.5px solid #d3d1c7; }
+.input-row { display: flex; gap: 8px; align-items: flex-end; }
+.msg-input {
+  flex: 1; padding: 9px 13px;
+  border: 0.5px solid #b4b2a9; border-radius: 12px;
+  font-size: 13px; background: #ffffff; color: #2c2c2a;
+  resize: none; line-height: 1.5; outline: none;
+}
+.msg-input:focus { border-color: #7F77DD; }
+.send-btn {
+  width: 34px; height: 34px; border-radius: 8px;
+  background: #7F77DD; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.send-btn:hover { background: #534AB7; }
+
+/* PDF Panel */
+.pdf-panel {
+  width: 0; border-left: 0.5px solid #d3d1c7;
+  display: flex; flex-direction: column;
+  overflow: hidden; transition: width .25s; background: #ffffff;
+}
+.pdf-panel.open { width: 260px; min-width: 260px; }
+.pdf-header { padding: 10px 12px; border-bottom: 0.5px solid #d3d1c7; display: flex; align-items: center; gap: 8px; }
+.pdf-title { flex: 1; font-size: 12px; font-weight: 500; color: #2c2c2a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.close-btn { background: none; border: none; cursor: pointer; color: #888780; font-size: 18px; line-height: 1; padding: 0 2px; }
+.close-btn:hover { color: #2c2c2a; }
+.pdf-page-info { padding: 6px 12px; font-size: 11px; color: #888780; border-bottom: 0.5px solid #d3d1c7; }
+.pdf-mock { flex: 1; padding: 12px; overflow-y: auto; }
+.pdf-page { background: #f1efe8; border-radius: 8px; padding: 12px; font-size: 11px; color: #5f5e5a; line-height: 1.7; }
+.pdf-highlight { background: #EEEDFE; color: #3C3489; border-radius: 3px; padding: 1px 2px; }
+.pdf-page-num { font-size: 10px; color: #888780; text-align: center; margin-top: 8px; }
+
+/* Main + views */
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.view { display: none; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
+.view.active { display: flex; }
+
+/* Pipeline */
+.pipeline-topbar {
+  padding: 10px 16px; border-bottom: 0.5px solid #d3d1c7;
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+}
+.pipeline-title { font-size: 14px; font-weight: 500; color: #2c2c2a; }
+.pipeline-body { flex: 1; overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; }
+.section-label { font-size: 11px; font-weight: 500; color: #888780; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
+
+.collection-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.col-pill {
+  padding: 5px 14px; border-radius: 20px; font-size: 12px;
+  border: 0.5px solid #b4b2a9; background: #f1efe8; color: #5f5e5a; cursor: pointer;
+}
+.col-pill.active { background: #EEEDFE; border-color: #AFA9EC; color: #3C3489; font-weight: 500; }
+.col-pill:hover:not(.active) { background: #e8e6df; }
+.new-col-btn {
+  padding: 5px 12px; border-radius: 20px; font-size: 12px;
+  border: 0.5px dashed #b4b2a9; background: transparent; color: #888780; cursor: pointer;
+}
+.new-col-btn:hover { background: #f1efe8; color: #5f5e5a; }
+
+.drop-zone {
+  border: 1.5px dashed #b4b2a9; border-radius: 12px;
+  padding: 28px 20px; text-align: center; background: #fafaf8;
+  cursor: pointer; transition: border-color .15s, background .15s;
+}
+.drop-zone:hover { border-color: #7F77DD; background: #EEEDFE; }
+.drop-zone:hover .drop-icon-svg { color: #7F77DD; }
+.drop-icon-svg { color: #b4b2a9; margin: 0 auto 10px; display: block; }
+.drop-title { font-size: 13px; font-weight: 500; color: #2c2c2a; margin-bottom: 4px; }
+.drop-sub { font-size: 12px; color: #888780; }
+
+.file-list { display: flex; flex-direction: column; gap: 8px; }
+.file-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border: 0.5px solid #d3d1c7;
+  border-radius: 8px; background: #ffffff;
+}
+.file-icon-svg { flex-shrink: 0; color: #888780; }
+.file-info { flex: 1; min-width: 0; }
+.file-name { font-size: 13px; color: #2c2c2a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-meta { font-size: 11px; color: #888780; margin-top: 2px; }
+.prog-wrap { margin-top: 5px; height: 4px; background: #f1efe8; border-radius: 4px; overflow: hidden; }
+.prog-bar { height: 100%; border-radius: 4px; transition: width .4s ease; }
+.prog-bar.chunking  { background: #EF9F27; }
+.prog-bar.embedding { background: #7F77DD; }
+.prog-bar.done      { background: #1D9E75; }
+.fstatus { font-size: 11px; white-space: nowrap; flex-shrink: 0; }
+.s-done   { color: #0F6E56; }
+.s-active { color: #3C3489; }
+.s-queued { color: #888780; }
+.file-del { background: none; border: none; cursor: pointer; color: #b4b2a9; font-size: 16px; line-height: 1; padding: 0 2px; flex-shrink: 0; }
+.file-del:hover { color: #E24B4A; }
+
+/* Toast */
+.toast {
+  position: absolute; bottom: 18px; left: 50%;
+  transform: translateX(-50%);
+  background: #2c2c2a; color: #f1efe8;
+  font-size: 12px; padding: 7px 16px; border-radius: 20px;
+  white-space: nowrap; opacity: 0; pointer-events: none;
+  transition: opacity .25s;
+}
+.toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Sidebar -->
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <button class="new-chat-btn" onclick="newChat()">
+        <span style="font-size:18px;line-height:1;color:#888780">+</span>
+        <span>New chat</span>
+      </button>
+    </div>
+    <div class="sidebar-scroll">
+      <div class="date-group">Today</div>
+      <div class="session active" onclick="loadSession(this)">OS scheduling notes</div>
+      <div class="session" onclick="loadSession(this)">Process vs thread diff</div>
+      <div class="date-group">Yesterday</div>
+      <div class="session" onclick="loadSession(this)">Deadlock conditions</div>
+      <div class="session" onclick="loadSession(this)">Paging vs segmentation</div>
+      <div class="date-group">Last 7 days</div>
+      <div class="session" onclick="loadSession(this)">SQL window functions</div>
+      <div class="session" onclick="loadSession(this)">DBMS normalization 3NF</div>
+      <div class="session" onclick="loadSession(this)">B+ tree vs hash index</div>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+
+    <!-- Chat view -->
+    <div class="view active" id="chatView">
+      <div class="chat-topbar">
+        <button class="icon-btn" onclick="toggleSidebar()" title="Toggle history" style="flex-direction:column;gap:4px;">
+          <span style="display:block;width:14px;height:1.5px;background:#5f5e5a;border-radius:2px;"></span>
+          <span style="display:block;width:14px;height:1.5px;background:#5f5e5a;border-radius:2px;"></span>
+          <span style="display:block;width:14px;height:1.5px;background:#5f5e5a;border-radius:2px;"></span>
+        </button>
+        <span class="collection-label">Collection</span>
+        <select class="collection-select">
+          <option>All PDFs</option>
+          <option selected>OS notes</option>
+          <option>DBMS notes</option>
+          <option>CN notes</option>
+        </select>
+        <div class="topbar-spacer"></div>
+        <div class="web-toggle-wrap">
+          <div class="toggle-track on" id="webToggle" onclick="toggleWeb()">
+            <div class="toggle-knob"></div>
+          </div>
+          <span>Web search</span>
+          <span class="offline-badge" id="offlineBadge">No internet</span>
+        </div>
+        <button class="icon-btn" id="pipelineBtn" onclick="goTo('pipeline')" title="Manage PDFs">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+            <rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/>
+            <rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/>
+            <rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/>
+            <rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="messages" id="messages">
+        <div class="msg user"><div class="bubble">What are the different CPU scheduling algorithms?</div></div>
+        <div class="msg bot">
+          <div class="bubble">CPU scheduling algorithms determine the order in which processes get CPU time. The main ones are FCFS, SJF, Round Robin, and Priority Scheduling. Round Robin is most commonly used in time-sharing systems — it assigns a fixed time quantum to each process in a circular queue.</div>
+          <div class="citations">
+            <div class="cite-chip" onclick="openPDF('OS_Notes_Unit3.pdf','14')">
+              <svg viewBox="0 0 16 16" fill="none"><rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5h6M5 8h6M5 11h4" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
+              OS_Notes_Unit3.pdf · p.14
+            </div>
+            <div class="cite-chip" onclick="openPDF('OS_Notes_Unit3.pdf','17')">
+              <svg viewBox="0 0 16 16" fill="none"><rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5h6M5 8h6M5 11h4" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
+              OS_Notes_Unit3.pdf · p.17
+            </div>
+          </div>
+        </div>
+        <div class="msg user"><div class="bubble">Explain Round Robin in more detail with the time quantum concept.</div></div>
+        <div class="msg bot">
+          <div class="bubble">In Round Robin scheduling, each process is given a fixed time slice called the <em>time quantum</em> (typically 10–100ms). If the process doesn't finish within its quantum, it's preempted and moved to the back of the ready queue. A smaller quantum improves responsiveness but increases context-switch overhead.</div>
+          <div class="citations">
+            <div class="cite-chip" onclick="openPDF('OS_Notes_Unit3.pdf','18')">
+              <svg viewBox="0 0 16 16" fill="none"><rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5h6M5 8h6M5 11h4" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
+              OS_Notes_Unit3.pdf · p.18
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="input-area">
+        <div class="input-row">
+          <textarea class="msg-input" id="msgInput" rows="1" placeholder="Ask about your PDFs..."></textarea>
+          <button class="send-btn" onclick="sendMsg()">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 14L14 8L2 2V7L10 8L2 9V14Z" fill="#EEEDFE"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pipeline view -->
+    <div class="view" id="pipelineView">
+      <div class="pipeline-topbar">
+        <button class="icon-btn" onclick="goTo('chat')" title="Back to chat">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <span class="pipeline-title">PDF pipeline</span>
+        <div class="topbar-spacer"></div>
+        <span id="collLabel" style="font-size:12px;color:#888780;">Collection: <strong style="color:#3C3489;">OS notes</strong></span>
+      </div>
+
+      <div class="pipeline-body">
+
+        <div>
+          <div class="section-label">Collections</div>
+          <div class="collection-row" id="collRow">
+            <div class="col-pill active" onclick="selectCol(this)">OS notes</div>
+            <div class="col-pill" onclick="selectCol(this)">DBMS notes</div>
+            <div class="col-pill" onclick="selectCol(this)">CN notes</div>
+            <button class="new-col-btn" onclick="addCol()">+ New</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="section-label">Upload PDFs</div>
+          <div class="drop-zone" onclick="simulateUpload()">
+            <svg class="drop-icon-svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+              <path d="M16 22V10M16 10L11 15M16 10L21 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M6 24h20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <div class="drop-title">Drop PDFs here or click to browse</div>
+            <div class="drop-sub">Supports text-based PDFs · Max 50 MB each</div>
+          </div>
+        </div>
+
+        <div>
+          <div class="section-label">Files in this collection</div>
+          <div class="file-list" id="fileList">
+
+            <div class="file-row">
+              <svg class="file-icon-svg" width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5h6M5 8h6M5 11h4" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
+              <div class="file-info">
+                <div class="file-name">OS_Notes_Unit3.pdf</div>
+                <div class="file-meta">2.4 MB · 52 pages · Added 2 days ago</div>
+              </div>
+              <span class="fstatus s-done">Indexed</span>
+              <button class="file-del">×</button>
+            </div>
+
+            <div class="file-row">
+              <svg class="file-icon-svg" width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5h6M5 8h6M5 11h4" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
+              <div class="file-info">
+                <div class="file-name">OS_Notes_Unit1_2.pdf</div>
+                <div class="file-meta">1.8 MB · 38 pages</div>
+                <div class="prog-wrap"><div class="prog-bar embedding" id="pb1" style="width:62%"></div></div>
+              </div>
+              <span class="fstatus s-active" id="ps1">Embedding…</span>
+              <button class="file-del">×</button>
+            </div>
+
+            <div class="file-row">
+              <svg class="file-icon-svg" width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5h6M5 8h6M5 11h4" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
+              <div class="file-info">
+                <div class="file-name">OS_Silberschatz_Ch4.pdf</div>
+                <div class="file-meta">3.1 MB · 64 pages</div>
+                <div class="prog-wrap"><div class="prog-bar chunking" id="pb2" style="width:30%"></div></div>
+              </div>
+              <span class="fstatus s-active" id="ps2">Chunking…</span>
+              <button class="file-del">×</button>
+            </div>
+
+            <div class="file-row">
+              <svg class="file-icon-svg" width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5h6M5 8h6M5 11h4" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
+              <div class="file-info">
+                <div class="file-name">OS_Practice_Questions.pdf</div>
+                <div class="file-meta">0.6 MB · 12 pages</div>
+              </div>
+              <span class="fstatus s-queued">Queued</span>
+              <button class="file-del">×</button>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- PDF Panel -->
+  <div class="pdf-panel" id="pdfPanel">
+    <div class="pdf-header">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="3" y="1" width="10" height="14" rx="1.5" stroke="#888780" stroke-width="1.2"/><path d="M5 5h6M5 8h6M5 11h4" stroke="#888780" stroke-width="1" stroke-linecap="round"/></svg>
+      <span class="pdf-title" id="pdfTitle">OS_Notes_Unit3.pdf</span>
+      <button class="close-btn" onclick="closePDF()">×</button>
+    </div>
+    <div class="pdf-page-info" id="pdfPageInfo">Page 14 of 52</div>
+    <div class="pdf-mock">
+      <div class="pdf-page" id="pdfContent"></div>
+      <div class="pdf-page-num" id="pdfPageNum">— Page 14 —</div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+var pdfContents = {
+  '14': '3.2 CPU Scheduling Algorithms<br><br>CPU scheduling is the basis of multiprogrammed operating systems. By switching the CPU among processes, the operating system can make the computer more productive.<br><br><span class="pdf-highlight">Round Robin (RR) scheduling is designed especially for time-sharing systems. It is similar to FCFS scheduling, but preemption is added to switch between processes.</span><br><br>A small unit of time, called a time quantum or time slice, is defined. A time quantum is generally from 10 to 100 milliseconds.',
+  '17': '3.4 Priority Scheduling<br><br>A priority is associated with each process, and the CPU is allocated to the process with the highest priority. Equal-priority processes are scheduled in FCFS order.<br><br><span class="pdf-highlight">SJF scheduling is a special case of the general priority-scheduling algorithm. The priority is the inverse of the (predicted) next CPU burst.</span><br><br>Priorities can be defined internally or externally.',
+  '18': '3.5 Round Robin — Time Quantum<br><br><span class="pdf-highlight">If the time quantum is too large, RR scheduling degenerates to FCFS. If the quantum is too small, RR results in a large number of context switches.</span><br><br>The performance of RR scheduling depends heavily on the size of the time quantum.'
+};
+
+function goTo(v) {
+  document.getElementById('chatView').classList.toggle('active', v === 'chat');
+  document.getElementById('pipelineView').classList.toggle('active', v === 'pipeline');
+  document.getElementById('pipelineBtn').classList.toggle('pipeline-active', v === 'pipeline');
+  if (v === 'pipeline') closePDF();
+}
+
+function toggleSidebar() { document.getElementById('sidebar').classList.toggle('collapsed'); }
+
+function toggleWeb() {
+  var t = document.getElementById('webToggle');
+  t.classList.toggle('on');
+  document.getElementById('offlineBadge').classList.toggle('show', !t.classList.contains('on'));
+}
+
+function openPDF(name, page) {
+  var p = document.getElementById('pdfPanel');
+  p.classList.add('open');
+  document.getElementById('pdfTitle').textContent = name;
+  document.getElementById('pdfPageInfo').textContent = 'Page ' + page + ' of 52';
+  document.getElementById('pdfPageNum').textContent = '— Page ' + page + ' —';
+  document.getElementById('pdfContent').innerHTML = pdfContents[page] || pdfContents['14'];
+}
+
+function closePDF() { document.getElementById('pdfPanel').classList.remove('open'); }
+
+function loadSession(el) {
+  document.querySelectorAll('.session').forEach(function(s){ s.classList.remove('active'); });
+  el.classList.add('active');
+}
+
+function newChat() {
+  document.querySelectorAll('.session').forEach(function(s){ s.classList.remove('active'); });
+  document.getElementById('messages').innerHTML = '<div style="flex:1;display:flex;align-items:center;justify-content:center;color:#888780;font-size:13px;padding:40px 0">Ask anything about your PDFs</div>';
+  closePDF();
+}
+
+function sendMsg() {
+  var inp = document.getElementById('msgInput');
+  var text = inp.value.trim();
+  if (!text) return;
+  var msgs = document.getElementById('messages');
+  var u = document.createElement('div');
+  u.className = 'msg user';
+  u.innerHTML = '<div class="bubble">' + text + '</div>';
+  msgs.appendChild(u);
+  inp.value = '';
+  setTimeout(function() {
+    var b = document.createElement('div');
+    b.className = 'msg bot';
+    b.innerHTML = '<div class="bubble" style="color:#888780;font-style:italic">Thinking...</div>';
+    msgs.appendChild(b);
+    msgs.scrollTop = msgs.scrollHeight;
+  }, 300);
+}
+
+document.getElementById('msgInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+});
+
+function selectCol(el) {
+  document.querySelectorAll('.col-pill').forEach(function(p){ p.classList.remove('active'); });
+  el.classList.add('active');
+  document.getElementById('collLabel').innerHTML = 'Collection: <strong style="color:#3C3489;">' + el.textContent + '</strong>';
+}
+
+function addCol() {
+  var name = prompt('Collection name:');
+  if (!name || !name.trim()) return;
+  var row = document.getElementById('collRow');
+  var pill = document.createElement('div');
+  pill.className = 'col-pill';
+  pill.textContent = name.trim();
+  pill.onclick = function(){ selectCol(this); };
+  row.insertBefore(pill, row.lastElementChild);
+}
+
+function simulateUpload() {
+  var name = 'Upload_' + Date.now().toString().slice(-4) + '.pdf';
+  var uid = 'u' + Date.now();
+  var row = document.createElement('div');
+  row.className = 'file-row';
+  row.innerHTML = '<svg class="file-icon-svg" width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="3" y="1" width="10" height="14" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5h6M5 8h6M5 11h4" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>'
+    + '<div class="file-info"><div class="file-name">' + name + '</div><div class="file-meta" id="m' + uid + '">Uploading…</div>'
+    + '<div class="prog-wrap"><div class="prog-bar chunking" id="' + uid + '" style="width:4%"></div></div></div>'
+    + '<span class="fstatus s-active" id="s' + uid + '">Parsing…</span>'
+    + '<button class="file-del">×</button>';
+  document.getElementById('fileList').appendChild(row);
+  var w = 4;
+  var stages = [{l:'Chunking…',c:'chunking'},{l:'Embedding…',c:'embedding'},{l:'Storing…',c:'embedding'}];
+  var si = 0;
+  var iv = setInterval(function() {
+    var pb = document.getElementById(uid);
+    var ps = document.getElementById('s' + uid);
+    if (!pb) { clearInterval(iv); return; }
+    w += 5;
+    if (w >= 100) {
+      pb.style.width = '100%'; pb.className = 'prog-bar done';
+      ps.textContent = 'Indexed'; ps.className = 'fstatus s-done';
+      document.getElementById('m' + uid).textContent = 'Just now';
+      pb.parentElement.style.display = 'none';
+      clearInterval(iv);
+      showToast(name + ' indexed ✓');
+    } else {
+      pb.style.width = w + '%';
+      var idx = Math.min(Math.floor((w / 100) * stages.length), stages.length - 1);
+      if (idx !== si) { si = idx; pb.className = 'prog-bar ' + stages[si].c; ps.textContent = stages[si].l; }
+    }
+  }, 280);
+}
+
+function showToast(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(function(){ t.classList.remove('show'); }, 3000);
+}
+
+var d1=1, d2=1;
+setInterval(function(){
+  var p1=document.getElementById('pb1'), p2=document.getElementById('pb2');
+  if(p1){ var w=parseFloat(p1.style.width)||62; w+=d1*0.3; if(w>=94)d1=-1; if(w<=56)d1=1; p1.style.width=w+'%'; }
+  if(p2){ var w2=parseFloat(p2.style.width)||30; w2+=d2*0.25; if(w2>=52)d2=-1; if(w2<=22)d2=1; p2.style.width=w2+'%'; }
+}, 120);
+</script>
+</body>
+</html>

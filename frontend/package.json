@@ -1,0 +1,32 @@
+{
+  "name": "local-rag-chat-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build && node scripts/generate-static-routes.mjs",
+    "preview": "vite preview",
+    "test:message-markdown": "tsx --test tests/message-markdown.test.tsx",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "d3-force": "3.0.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.13.2",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/d3-force": "3.0.10",
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.3"
+  }
+}

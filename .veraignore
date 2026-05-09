@@ -1,0 +1,11 @@
+# Local build/runtime artifacts that add noise or can destabilize indexing.
+tmp/**
+frontend/node_modules/**
+frontend/dist/**
+frontend/.vite/**
+backend/.venv/**
+backend/data/chroma/**
+backend/data/*.db
+backend/data/*.sqlite3
+backend/data/uploads/**
+*.log

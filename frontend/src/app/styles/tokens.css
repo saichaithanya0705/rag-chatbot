@@ -1,0 +1,65 @@
+:root {
+  color-scheme: light;
+  font-family: var(--font-body);
+  line-height: 1.5;
+  font-weight: 400;
+
+  /* Typography Scale */
+  --font-xxs: 0.6875rem;   /* 11px */
+  --font-xs:  0.75rem;     /* 12px */
+  --font-sm:  0.8125rem;   /* 13px */
+  --font-base: 0.875rem;   /* 14px */
+  --font-md:  1rem;        /* 16px */
+  --font-lg:  1.125rem;    /* 18px */
+  --font-xl:  1.375rem;    /* 22px */
+  --font-heading: 'Lora', Georgia, 'Times New Roman', serif;
+  --font-body: 'Source Sans 3', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Classic Colors */
+  --bg-canvas: #f5f5f0;
+  --bg-canvas-radial: rgba(127, 119, 221, 0.12);
+  --surface-base: #ffffff;
+  --surface-muted: #f1efe8;
+  --surface-soft: #fafaf8;
+  --surface-accent: #eeedfe;
+  --border-soft: #d3d1c7;
+  --border-strong: #b4b2a9;
+  --text-strong: #2c2c2a;
+  --text-muted: #5f5e5a;
+  --text-subtle: #888780; /* deprecated - use --text-subtle-aa */
+  --text-subtle-aa: #736e64; /* WCAG AA replacement for text-subtle */
+  
+  --accent: #7f77dd;
+  --accent-strong: #534ab7;
+  --accent-border: #afa9ec;
+  --accent-ink: #3c3489;
+  
+  --warning: #ef9f27;
+  --warning-surface: #faeeda;
+  --warning-ink: #854f0b;
+  
+  --success: #1d9e75;
+  --success-ink: #0f6e56;
+  
+  --danger: #e24b4a;
+
+  /* New Surfaces */
+  --surface-overlay: rgba(44, 44, 42, 0.32);
+  --surface-gradient-warm: linear-gradient(175deg, #f7f6f1 0%, #eeedde 100%);
+
+  /* Shadows */
+  --shadow-soft: 0 1px 3px rgba(44, 42, 30, 0.06), 0 1px 2px rgba(44, 42, 30, 0.04);
+  --shadow-card-hover: 0 6px 16px rgba(44, 42, 30, 0.08), 0 2px 6px rgba(44, 42, 30, 0.04);
+  --shadow-floating: 0 8px 24px rgba(44, 42, 30, 0.10), 0 2px 8px rgba(44, 42, 30, 0.06);
+
+  /* Geometry & Motion */
+  --radius-shell: 12px;
+  --radius-card: 8px;
+  --radius-pill: 999px;
+  --radius-input: 12px;
+  --transition-fast: 180ms ease;
+  --transition-medium: 260ms ease;
+  --transition-slow: 400ms ease;
+  --transition-spring: 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  --max-shell-width: 1100px;
+}
