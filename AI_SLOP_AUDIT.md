@@ -6,7 +6,7 @@ Confidence: Medium-high
 24/100. This is low slop risk, not minimal slop. The biggest confirmed slop-like risks have been reduced, but the repository still has source-backed architecture pressure that keeps it above the 0-20 minimal range.
 
 **Can this honestly be <5/100?**
-No. A sub-5 score would be dishonest while the repo still has verified architecture pressure in document persistence, ingestion/topic cross-store consistency, and large frontend orchestration components. The graph-only triage is `19/100`; the source-augmented scanner reports `64/100`, but that higher number includes docs, mockups, package-lock entries, ignored temp/vendor material, and audit-report text. Final scoring below is source-verified, not vibe-based.
+No. A sub-5 score would be dishonest while the repo still has verified architecture pressure in document persistence, ingestion/topic cross-store consistency, and large frontend orchestration components. The graph-only triage is `14/100`; the source-augmented scanner reports `59/100`, but that higher number includes docs, mockups, package-lock entries, ignored temp/vendor material, and audit-report text. Final scoring below is source-verified, not vibe-based.
 
 **Scope**
 - Repository root: `D:/projects/chat`
@@ -40,7 +40,7 @@ No. A sub-5 score would be dishonest while the repo still has verified architect
 | Tracked one-off rewrite scripts | Source scan found file-write tooling in root. | `patchTSX.js` and `splitCSS.js` were tracked, unreferenced scripts that rewrote source files. | Confirmed repo hygiene slop, fixed | Removed obsolete mutation scripts from tracked source. |
 
 **Score Breakdown**
-- Graph structure: 8/25. Graph-only triage is minimal at `19/100`, but centrality remains concentrated in RAG, document, topic, and history services.
+- Graph structure: 8/25. Graph-only triage is minimal at `14/100`, but centrality remains concentrated in RAG, document, topic, and history services.
 - Architectural integrity: 6/25. RAG, ingestion parsing, and preview rendering boundaries are much healthier; document/topic lifecycle and frontend provider boundaries still carry real coupling.
 - Maintainability and code smells: 4/20. The worst stale scripts are gone and ingestion shed chunk policy; several 650-900 line orchestration files remain.
 - Verification and test quality: 3/15. Backend tests are meaningful and green, including focused ingestion chunking tests, but integration/failure-path coverage is still thin around multi-store lifecycles and frontend interaction flows.
@@ -70,7 +70,7 @@ No. A sub-5 score would be dishonest while the repo still has verified architect
 - Regenerated Graphify after the code changes.
 
 **Validation**
-- `python C:/Users/SAI/.codex/skills/audit-ai-slop/scripts/graphify_slop_scan.py --graphify-out graphify-out --source-root . --format markdown`: completed before the document-preview split; graph-only `19/100`, source-augmented triage `64/100` across 185 source-like files. The high source score still includes known docs/mockup/ignored-temp/lockfile/audit-report noise.
+- `python C:/Users/SAI/.codex/skills/audit-ai-slop/scripts/graphify_slop_scan.py --graphify-out graphify-out --source-root . --format markdown`: completed after the document-preview split; graph-only `14/100`, source-augmented triage `59/100` across 186 source-like files. The moderate source score still includes known docs/mockup/ignored-temp/lockfile/audit-report noise.
 - `python -m graphify update .`: passed after retrieval fixes; command output rebuilt `1061 nodes`, `2070 edges`, `55 communities`; `GRAPH_REPORT.md` summary reported `1061 nodes`, `2070 edges`, `33 communities detected`.
 - `backend/.venv/Scripts/python -m compileall backend/app/services/rag_retrieval.py backend/app/services/rag_retrieval_policy.py backend/tests/test_rag_retrieval.py backend/tests/test_rag_retrieval_policy.py`: passed.
 - `$env:PYTHONPATH='backend'; backend/.venv/Scripts/python -m pytest backend/tests/test_rag_retrieval.py backend/tests/test_rag_retrieval_policy.py`: passed, `9 passed`.
