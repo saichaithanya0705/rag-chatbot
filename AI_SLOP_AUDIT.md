@@ -2,14 +2,18 @@
 Score: 27/100, Low slop risk
 Confidence: Medium-high
 
+**Final Rating**
+27/100. This is low slop risk, not minimal slop. The biggest confirmed slop-like risks have been reduced, but the repository still has source-backed architecture pressure that keeps it above the 0-20 minimal range.
+
 **Can this honestly be <5/100?**
-No. I reduced confirmed slop-like risk in this pass, but a sub-5 score would be dishonest while the repo still has verified architecture pressure in document persistence, ingestion/topic cross-store consistency, and large frontend orchestration components. The graph-only triage was already `19/100`; the source-augmented scanner reported `64/100`, but that higher number includes docs, mockups, package-lock entries, ignored temp/vendor material, and audit-report text. Final scoring below is source-verified, not vibe-based.
+No. A sub-5 score would be dishonest while the repo still has verified architecture pressure in document persistence, ingestion/topic cross-store consistency, and large frontend orchestration components. The graph-only triage is `19/100`; the source-augmented scanner reports `64/100`, but that higher number includes docs, mockups, package-lock entries, ignored temp/vendor material, and audit-report text. Final scoring below is source-verified, not vibe-based.
 
 **Scope**
 - Repository root: `D:/projects/chat`
 - Branch audited: `main`
 - Audit date: 2026-05-15
-- Graphify was read before source inspection, then regenerated after the latest retrieval-policy split.
+- Graphify was read before source inspection. The current report is dated 2026-05-15 and was regenerated after the latest retrieval-policy split.
+- Final audit pass ran on 2026-05-15 after commit `15433be`.
 - Sub-agents were used as bounded read-only verifiers for RAG, backend god nodes, frontend architecture, and repo hygiene. Their findings are integrated here.
 
 **Why**
@@ -22,16 +26,24 @@ No. I reduced confirmed slop-like risk in this pass, but a sub-5 score would be 
 **Evidence**
 | Signal | Graph Evidence | Source Evidence | Classification | Impact |
 |---|---|---|---|---|
-| RAG god-object split | Fresh Graphify: `RagService` 71 edges, `RagRetrievalEngine` 43 edges; betweenness for `RagService` now reflects coordination plus model/generation dependencies. | `backend/app/services/rag_service.py` is now 854 lines; retrieval/search/rerank behavior moved to `backend/app/services/rag_retrieval.py`; `backend/tests/test_rag_retrieval.py` covers direct lexical shortcut and scoped collection retrieval. | Confirmed slop signal, fixed in this pass | RAG retrieval no longer lives inside the answer-generation service. |
-| Retrieval policy boundary | Fresh Graphify still reports `RagRetrievalEngine` as a top connected node after the service split. | `backend/app/services/rag_retrieval_policy.py` now owns FTS query construction, RRF scoring, flat-collection fallback policy, rerank pool sizing, comparison coverage selection, and rerank-decision rules; `backend/tests/test_rag_retrieval_policy.py` covers those policies without Chroma/KG/reranker fakes. | Confirmed slop signal, fixed in this pass | The retrieval engine now orchestrates stores and delegates deterministic policy instead of accumulating hidden ranking rules. |
+| RAG god-object split | Fresh Graphify: `RagService` 71 edges, `RagRetrievalEngine` 43 edges; betweenness for `RagService` now reflects coordination plus model/generation dependencies. | `backend/app/services/rag_service.py` is now 801 lines; retrieval/search/rerank behavior moved to `backend/app/services/rag_retrieval.py`; `backend/tests/test_rag_retrieval.py` covers direct lexical shortcut and scoped collection retrieval. | Confirmed slop signal, fixed | RAG retrieval no longer lives inside the answer-generation service. |
+| Retrieval policy boundary | Fresh Graphify still reports `RagRetrievalEngine` as a top connected node after the service split. | `backend/app/services/rag_retrieval_policy.py` now owns FTS query construction, RRF scoring, flat-collection fallback policy, rerank pool sizing, comparison coverage selection, and rerank-decision rules; `backend/tests/test_rag_retrieval_policy.py` covers those policies without Chroma/KG/reranker fakes. | Confirmed slop signal, fixed | The retrieval engine now orchestrates stores and delegates deterministic policy instead of accumulating hidden ranking rules. |
 | RAG helper boundary | Helper communities still exist for answer text, citations, grounding, comparison, and prompting. | `backend/app/services/rag_answer_text.py` now owns `first_sentence`, `is_informative_answer_sentence`, and `comparison_sentence_for_context`; `RagService` consumes helpers directly. | Healthy architecture signal | Prevents helper logic from drifting back into service-private methods. |
-| Multi-store document service | Graphify still reports `DocumentService` as a god node with 42 edges. | `backend/app/services/document_service.py` owns DB records, Chroma chunks, FTS catalog sync, corpus versioning, and preview HTML rendering. | Confirmed architecture risk | Needs repository/storage boundary split before whole-repo score can be minimal. |
+| Multi-store document service | Graphify still reports `DocumentService` as a god node with 42 edges. | `backend/app/services/document_service.py` is 927 lines and owns DB records, Chroma chunks, FTS catalog sync, corpus versioning, and preview HTML rendering. | Confirmed architecture risk | Needs repository/storage boundary split before whole-repo score can be minimal. |
 | Ingestion cross-store lifecycle | `IngestionService` remains a top connected node. | Ingestion writes Chroma chunks, retrieval catalog records, pages, topic metadata, and document status through separate operations, with broad cleanup on failure. | Confirmed architecture risk | Partial external state can exist unless the lifecycle is made durable and reconciliable. |
 | Topic/KG consistency | `TopicIndexService`, `KgManager`, and `ChromaStore` remain connected through inferred and source-confirmed relationships. | Topic indexing mutates Chroma metadata, SQLite catalog state, and KG JSON without one transaction boundary. | Confirmed consistency risk | Topic state can diverge across stores after partial failure. |
-| Frontend workbench provider | Graphify community 16 still centers on `WorkbenchProvider`. | `frontend/src/app/providers/workbench/WorkbenchProvider.tsx` still owns sessions, streaming chat, ingestion events, preview state, uploads, reclustering, viewport state, and toasts. | Confirmed frontend architecture risk | Needs domain-sliced providers/hooks or reducer slices. |
-| Knowledge graph explorer | Frontend graph/model code is partially extracted, but explorer remains central. | `KnowledgeGraphExplorer.tsx` mixes layout simulation, camera/export, URL sync, toolbar, inspector, and accessibility behavior. | Confirmed maintainability risk | Needs layout/camera/canvas/inspector splits before minimal-risk scoring. |
+| Frontend workbench provider | Graphify community 15 still centers on `WorkbenchProvider`. | `frontend/src/app/providers/workbench/WorkbenchProvider.tsx` is 884 lines and still owns sessions, streaming chat, ingestion events, preview state, uploads, reclustering, viewport state, and toasts. | Confirmed frontend architecture risk | Needs domain-sliced providers/hooks or reducer slices. |
+| Knowledge graph explorer | Frontend graph/model code is partially extracted, but explorer remains central. | `frontend/src/widgets/knowledge-graph-explorer/KnowledgeGraphExplorer.tsx` is 841 lines and mixes layout simulation, camera/export, URL sync, toolbar, inspector, and accessibility behavior. | Confirmed maintainability risk | Needs layout/camera/canvas/inspector splits before minimal-risk scoring. |
 | PDF preview HTML sink | Scanner flags `dangerouslySetInnerHTML`. | Frontend injects backend preview HTML; backend escapes document text before inserting controlled highlight spans. Existing markdown tests also assert raw HTML escaping for assistant output. | Benign but governed | Keep as security-sensitive review target; structured preview blocks would be stronger. |
 | Tracked one-off rewrite scripts | Source scan found file-write tooling in root. | `patchTSX.js` and `splitCSS.js` were tracked, unreferenced scripts that rewrote source files. | Confirmed repo hygiene slop, fixed | Removed obsolete mutation scripts from tracked source. |
+
+**Score Breakdown**
+- Graph structure: 8/25. Graph-only triage is minimal at `19/100`, but centrality remains concentrated in RAG, document, topic, and history services.
+- Architectural integrity: 8/25. RAG boundaries are much healthier; document/topic/ingestion and frontend provider boundaries still carry real coupling.
+- Maintainability and code smells: 5/20. The worst stale scripts are gone, but several 650-900 line orchestration files remain.
+- Verification and test quality: 3/15. Backend tests are meaningful and green, but integration/failure-path coverage is still thin around multi-store lifecycles and frontend interaction flows.
+- Security and configuration hygiene: 2/10. No tracked secrets were confirmed and `npm audit` previously passed; the governed PDF HTML sink stays security-sensitive.
+- Documentation/provenance honesty: 1/5. Audit/docs now accurately call out remaining risk; some older planning/mockup docs still create scanner noise.
 
 **Aggressive Review Targets**
 - Split `DocumentService` into document repository, chunk catalog repository, vector chunk store, and preview rendering service.
@@ -40,9 +52,9 @@ No. I reduced confirmed slop-like risk in this pass, but a sub-5 score would be 
 - Split `KnowledgeGraphExplorer` into layout hook, camera hook, canvas, toolbar, and inspector components.
 - Replace the PDF preview HTML contract with structured preview blocks or an explicit sanitized-HTML type plus malicious-PDF tests.
 
-**Permanent Fixes Applied In This Pass**
+**Permanent Fixes Applied During This Audit Work**
 - Added `backend/app/services/rag_retrieval.py` and moved chunk retrieval, lexical retrieval, comparison context retrieval, scoped collection selection, web result reranking, and local-context checks out of `RagService`.
-- Reduced `backend/app/services/rag_service.py` from 1,721 lines to 854 lines.
+- Reduced `backend/app/services/rag_service.py` from 1,721 lines to 801 lines.
 - Added `backend/tests/test_rag_retrieval.py` to guard direct lexical shortcuts and collection-scoped retrieval leakage.
 - Added `backend/app/services/rag_retrieval_policy.py` and moved pure retrieval policy out of `RagRetrievalEngine`.
 - Added `backend/tests/test_rag_retrieval_policy.py` to cover FTS query shaping, flat fallback selection, rerank pool width, comparison coverage, and rerank decision rules.
@@ -51,12 +63,13 @@ No. I reduced confirmed slop-like risk in this pass, but a sub-5 score would be 
 - Regenerated Graphify after the code changes.
 
 **Validation**
-- `python C:/Users/SAI/.codex/skills/audit-ai-slop/scripts/graphify_slop_scan.py --graphify-out graphify-out --source-root . --format markdown`: completed before latest fixes; graph-only `19/100`, source-augmented triage `64/100`.
+- `python C:/Users/SAI/.codex/skills/audit-ai-slop/scripts/graphify_slop_scan.py --graphify-out graphify-out --source-root . --format markdown`: completed in the final audit pass; graph-only `19/100`, source-augmented triage `64/100`.
 - `python -m graphify update .`: passed after latest fixes; command output rebuilt `1061 nodes`, `2070 edges`, `55 communities`; `GRAPH_REPORT.md` summary reports `1061 nodes`, `2070 edges`, `33 communities detected`.
 - `backend/.venv/Scripts/python -m compileall backend/app/services/rag_retrieval.py backend/app/services/rag_retrieval_policy.py backend/tests/test_rag_retrieval.py backend/tests/test_rag_retrieval_policy.py`: passed.
 - `$env:PYTHONPATH='backend'; backend/.venv/Scripts/python -m pytest backend/tests/test_rag_retrieval.py backend/tests/test_rag_retrieval_policy.py`: passed, `9 passed`.
 - `$env:PYTHONPATH='backend'; backend/.venv/Scripts/python -m pytest backend/tests`: passed, `39 passed`.
 - Previous frontend validation remains unchanged because the latest pass touched backend retrieval only: `frontend/npm run typecheck`, `frontend/npm run test:message-markdown`, `frontend/npx tsx --test tests/knowledge-graph-model.test.ts`, `frontend/npx tsx --test src/app/providers/workbench/workbenchStateHelpers.test.ts`, `frontend/npm run build`, and `frontend/npm audit --omit=dev --audit-level=moderate` all passed in the prior audit/fix pass.
+- Final source corroboration inspected the current Graphify god nodes, line counts, tracked/ignored scanner-noise sources, and code smell buckets. No new bounded code fix was found in this final rating pass; the remaining confirmed issues are larger architecture work already listed as review targets.
 - `git diff --check`: passed, with only Git line-ending conversion warnings.
 
 **Residual Risk**
