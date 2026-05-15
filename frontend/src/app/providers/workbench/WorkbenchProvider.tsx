@@ -12,257 +12,43 @@ import {
 import { httpWorkbenchGateway, type KnowledgeBaseRecord } from "@/shared/api/httpWorkbench";
 import type {
   Citation,
-  CollectionSummary,
   IngestionProgressEvent,
-  KnowledgeBaseSummary,
-  KnowledgeGraph,
   Message,
-  PdfPreview,
   PdfPreviewRequest,
   PipelineDocument,
   PipelineStatus,
-  SessionSummary,
 } from "@/shared/api/types";
-
-interface WorkbenchState {
-  isBootstrapping: boolean;
-  isReclustering: boolean;
-  isSendingMessage: boolean;
-  isCompactViewport: boolean;
-  isPdfPreviewLoading: boolean;
-  pendingSessionAction: "create" | "select" | "delete" | null;
-  pendingSessionTargetId: string | null;
-  sessions: SessionSummary[];
-  activeSessionId: string;
-  collections: CollectionSummary[];
-  activeCollectionId: string;
-  messagesBySession: Record<string, Message[]>;
-  pipelineDocuments: PipelineDocument[];
-  knowledgeGraph: KnowledgeGraph;
-  knowledgeBaseSummary: KnowledgeBaseSummary;
-  bootstrapError: string | null;
-  draftMessage: string;
-  sidebarOpen: boolean;
-  webSearchEnabled: boolean;
-  webSearchOffline: boolean;
-  thinkingEnabled: boolean;
-  pdfPreview: PdfPreview | null;
-  pdfPreviewError: string | null;
-  pdfPreviewRequest: PdfPreviewRequest | null;
-  toastMessage: string | null;
-}
-
-interface WorkbenchContextValue {
-  state: WorkbenchState;
-  actions: {
-    retryBootstrap: () => Promise<void>;
-    createSession: () => Promise<void>;
-    selectSession: (sessionId: string) => Promise<void>;
-    deleteSession: (sessionId: string) => Promise<void>;
-    toggleSidebar: () => void;
-    setSidebarOpen: (nextValue: boolean) => void;
-    selectCollection: (collectionId: string) => void;
-    setDraftMessage: (nextValue: string) => void;
-    toggleWebSearch: () => void;
-    toggleThinking: () => void;
-    sendMessage: (text: string) => Promise<void>;
-    openPdfPreview: (citation: Citation) => Promise<void>;
-    goToPdfPreviewPage: (page: number) => Promise<void>;
-    retryPdfPreview: () => Promise<void>;
-    closePdfPreview: () => void;
-    uploadDocuments: (files: File[]) => Promise<void>;
-    reclusterTopics: () => Promise<void>;
-    removePipelineDocument: (documentId: string) => Promise<void>;
-    clearToast: () => void;
-  };
-}
-
-const ROOT_COLLECTION_ID = "all-pdfs";
-const THINKING_ENABLED_STORAGE_KEY = "local-rag-chat/thinking-enabled";
-
-function getInitialCompactViewport() {
-  return typeof window !== "undefined" && window.matchMedia("(max-width: 960px)").matches;
-}
-
-function getInitialThinkingEnabled() {
-  if (typeof window === "undefined") {
-    return true;
-  }
-
-  const storedValue = window.localStorage.getItem(THINKING_ENABLED_STORAGE_KEY);
-  if (storedValue === null) {
-    return true;
-  }
-
-  return storedValue === "true";
-}
-
-function persistThinkingEnabled(nextValue: boolean) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(THINKING_ENABLED_STORAGE_KEY, String(nextValue));
-}
-
-function toPreviewRequest(citation: Citation): PdfPreviewRequest {
-  if (citation.kind !== "pdf" || !citation.pdfName || citation.page === undefined) {
-    throw new Error("Only PDF citations can open the preview panel.");
-  }
-
-  return {
-    pdfName: citation.pdfName,
-    page: citation.page,
-    chunkIndex: citation.chunkIndex ?? 0,
-    excerpt: citation.sourceText ?? citation.excerpt,
-  };
-}
-
-const initialState: WorkbenchState = {
-  isBootstrapping: true,
-  isReclustering: false,
-  isSendingMessage: false,
-  isCompactViewport: getInitialCompactViewport(),
-  isPdfPreviewLoading: false,
-  pendingSessionAction: null,
-  pendingSessionTargetId: null,
-  sessions: [],
-  activeSessionId: "",
-  collections: [],
-  activeCollectionId: "",
-  messagesBySession: {},
-  pipelineDocuments: [],
-  knowledgeGraph: {
-    nodes: [],
-    edges: [],
-  },
-  knowledgeBaseSummary: {
-    indexedDocuments: 0,
-    indexedChunks: 0,
-    uploadHint: "",
-  },
-  bootstrapError: null,
-  draftMessage: "",
-  sidebarOpen: !getInitialCompactViewport(),
-  webSearchEnabled: true,
-  webSearchOffline: false,
-  thinkingEnabled: getInitialThinkingEnabled(),
-  pdfPreview: null,
-  pdfPreviewError: null,
-  pdfPreviewRequest: null,
-  toastMessage: null,
-};
+import {
+  COMPACT_VIEWPORT_MEDIA_QUERY,
+  createInitialWorkbenchState,
+  persistThinkingEnabled,
+} from "./workbenchInitialState";
+import { useStableWorkbenchActions } from "./workbenchActions";
+import {
+  appendMessages,
+  buildPendingAnswerTrace,
+  normalizeCollectionId,
+  replaceMessage,
+  retainKnownSessionMessages,
+  resolveCollectionLabel,
+  toPreviewRequest,
+  toStatusMap,
+  updateMessage,
+  updateMessageContent,
+} from "./workbenchStateHelpers";
+import type { WorkbenchContextValue, WorkbenchState } from "./workbenchTypes";
 
 const WorkbenchContext = createContext<WorkbenchContextValue | null>(null);
 
-function appendMessages(
-  messageMap: Record<string, Message[]>,
-  sessionId: string,
-  nextMessages: Message[],
-) {
-  return {
-    ...messageMap,
-    [sessionId]: [...(messageMap[sessionId] ?? []), ...nextMessages],
-  };
-}
-
-function replaceMessage(
-  messageMap: Record<string, Message[]>,
-  sessionId: string,
-  targetId: string,
-  nextMessage: Message,
-) {
-  return {
-    ...messageMap,
-    [sessionId]: (messageMap[sessionId] ?? []).map((message) =>
-      message.id === targetId ? nextMessage : message,
-    ),
-  };
-}
-
-function updateMessageContent(
-  messageMap: Record<string, Message[]>,
-  sessionId: string,
-  targetId: string,
-  nextContent: string,
-) {
-  return {
-    ...messageMap,
-    [sessionId]: (messageMap[sessionId] ?? []).map((message) =>
-      message.id === targetId
-        ? {
-            ...message,
-            content: nextContent,
-          }
-        : message,
-    ),
-  };
-}
-
-function updateMessage(
-  messageMap: Record<string, Message[]>,
-  sessionId: string,
-  targetId: string,
-  updater: (message: Message) => Message,
-) {
-  return {
-    ...messageMap,
-    [sessionId]: (messageMap[sessionId] ?? []).map((message) =>
-      message.id === targetId ? updater(message) : message,
-    ),
-  };
-}
-
-function retainKnownSessionMessages(
-  messageMap: Record<string, Message[]>,
-  sessionIds: string[],
-) {
-  const knownSessionIds = new Set(sessionIds);
-  return Object.fromEntries(
-    Object.entries(messageMap).filter(([sessionId]) => knownSessionIds.has(sessionId)),
-  );
-}
-
-function normalizeCollectionId(collections: CollectionSummary[], collectionId: string | null | undefined) {
-  if (collectionId && collections.some((collection) => collection.id === collectionId)) {
-    return collectionId;
-  }
-
-  return ROOT_COLLECTION_ID;
-}
-
-function resolveCollectionLabel(collections: CollectionSummary[], collectionId: string) {
-  return collections.find((collection) => collection.id === collectionId)?.label ?? "All PDFs";
-}
-
-function buildPendingAnswerTrace(collectionLabel: string, webSearchRequested: boolean) {
-  return [
-    {
-      kind: "scope",
-      label: "Scope",
-      detail: `Scoped this answer to ${collectionLabel}. Live web lookup was ${
-        webSearchRequested ? "enabled" : "off"
-      } for this turn.`,
-    },
-  ] satisfies NonNullable<Message["answerTrace"]>;
-}
-
-function toStatusMap(documents: PipelineDocument[]) {
-  return Object.fromEntries(documents.map((document) => [document.id, document.status])) as Record<
-    string,
-    PipelineStatus
-  >;
-}
-
 export function WorkbenchProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<WorkbenchState>(initialState);
+  const [state, setState] = useState<WorkbenchState>(createInitialWorkbenchState);
   const [ingestionStreamKey, setIngestionStreamKey] = useState(0);
   const toastTimeoutRef = useRef<number | null>(null);
   const titleSyncTimeoutRef = useRef<Map<string, number>>(new Map());
   const sendInFlightRef = useRef(false);
   const documentStatusRef = useRef<Record<string, PipelineStatus>>({});
-  const pipelineDocumentsRef = useRef<PipelineDocument[]>(initialState.pipelineDocuments);
-  const thinkingEnabledRef = useRef(initialState.thinkingEnabled);
+  const pipelineDocumentsRef = useRef<PipelineDocument[]>(state.pipelineDocuments);
+  const thinkingEnabledRef = useRef(state.thinkingEnabled);
 
   function showToast(message: string) {
     if (toastTimeoutRef.current !== null) {
@@ -409,7 +195,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const mediaQuery = window.matchMedia("(max-width: 960px)");
+    const mediaQuery = window.matchMedia(COMPACT_VIEWPORT_MEDIA_QUERY);
     const handleViewportChange = (event: MediaQueryListEvent | MediaQueryList) => {
       setState((previous) => {
         const isCompactViewport = event.matches;
@@ -1157,10 +943,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     }));
   }
 
-  // Keep a mutable ref to the latest actions so we can return stable function
-  // references via useMemo. This prevents downstream consumers that only read
-  // `actions` from re-rendering on every state change.
-  const actionsRef = useRef({
+  const stableActions = useStableWorkbenchActions({
     retryBootstrap,
     createSession,
     selectSession,
@@ -1181,52 +964,6 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     removePipelineDocument,
     clearToast,
   });
-  actionsRef.current = {
-    retryBootstrap,
-    createSession,
-    selectSession,
-    deleteSession,
-    toggleSidebar,
-    setSidebarOpen,
-    selectCollection,
-    setDraftMessage,
-    toggleWebSearch,
-    toggleThinking,
-    sendMessage,
-    openPdfPreview,
-    goToPdfPreviewPage,
-    retryPdfPreview,
-    closePdfPreview,
-    uploadDocuments,
-    reclusterTopics,
-    removePipelineDocument,
-    clearToast,
-  };
-
-  const stableActions: WorkbenchContextValue["actions"] = useMemo(
-    () => ({
-      retryBootstrap: (...a) => actionsRef.current.retryBootstrap(...a),
-      createSession: (...a) => actionsRef.current.createSession(...a),
-      selectSession: (...a) => actionsRef.current.selectSession(...a),
-      deleteSession: (...a) => actionsRef.current.deleteSession(...a),
-      toggleSidebar: (...a) => actionsRef.current.toggleSidebar(...a),
-      setSidebarOpen: (...a) => actionsRef.current.setSidebarOpen(...a),
-      selectCollection: (...a) => actionsRef.current.selectCollection(...a),
-      setDraftMessage: (...a) => actionsRef.current.setDraftMessage(...a),
-      toggleWebSearch: (...a) => actionsRef.current.toggleWebSearch(...a),
-      toggleThinking: (...a) => actionsRef.current.toggleThinking(...a),
-      sendMessage: (...a) => actionsRef.current.sendMessage(...a),
-      openPdfPreview: (...a) => actionsRef.current.openPdfPreview(...a),
-      goToPdfPreviewPage: (...a) => actionsRef.current.goToPdfPreviewPage(...a),
-      retryPdfPreview: (...a) => actionsRef.current.retryPdfPreview(...a),
-      closePdfPreview: (...a) => actionsRef.current.closePdfPreview(...a),
-      uploadDocuments: (...a) => actionsRef.current.uploadDocuments(...a),
-      reclusterTopics: (...a) => actionsRef.current.reclusterTopics(...a),
-      removePipelineDocument: (...a) => actionsRef.current.removePipelineDocument(...a),
-      clearToast: (...a) => actionsRef.current.clearToast(...a),
-    }),
-    [],
-  );
 
   const value: WorkbenchContextValue = useMemo(
     () => ({ state, actions: stableActions }),

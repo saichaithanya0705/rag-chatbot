@@ -2,6 +2,7 @@ import { Suspense, lazy, type ReactNode } from "react";
 import { Navigate, createBrowserRouter } from "react-router-dom";
 
 const ChatPage = lazy(() => import("@/pages/chat/ChatPage"));
+const KnowledgeGraphPage = lazy(() => import("@/pages/knowledge-graph/KnowledgeGraphPage"));
 const PipelinePage = lazy(() => import("@/pages/pipeline/PipelinePage"));
 
 function RouteFallback() {
@@ -31,5 +32,9 @@ export const router = createBrowserRouter([
   {
     path: "/pipeline",
     element: withSuspense(<PipelinePage />),
+  },
+  {
+    path: "/knowledge-graph",
+    element: withSuspense(<KnowledgeGraphPage />),
   },
 ]);

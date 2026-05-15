@@ -1,186 +1,112 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 from collections import Counter
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Sequence
+from typing import Sequence
 
 import httpx
 
 from app.core.chroma_store import ChromaStore
 from app.models.schemas import CitationPayload, ToolCallPayload
-from app.services.conversation_context import looks_context_dependent
 from app.services.document_service import DocumentService
 from app.services.kg_manager import KgManager
 from app.services.message_intent import classify_message_intent
 from app.services.ollama_client import OllamaClient, OllamaGenerationResult
 from app.services.query_rewrite_service import QueryRewriteService
+from app.services.rag_answer_text import (
+    CONCISE_ANSWER_PATTERN,
+    LEGACY_PDF_CITATION_PATTERN,
+    ONE_SENTENCE_PATTERN,
+    PDF_CITATION_PATTERN,
+    THREE_SENTENCE_PATTERN,
+    TWO_SENTENCE_PATTERN,
+    WEB_CITATION_PATTERN,
+    best_context_for_segment,
+    best_page_context,
+    claim_window,
+    clean_model_thinking_summary,
+    clean_qa_answer_text,
+    derive_citations_from_answer,
+    extract_direct_qa_pair,
+    has_uncited_substantive_segments,
+    normalize_answer_text,
+    normalize_question_for_matching,
+    question_match_score,
+    references_unknown_sources,
+    shape_shortcut_answer,
+    strip_citation_markers,
+    strip_thinking_blocks,
+    substantive_segments,
+    tokenize,
+)
+from app.services.rag_comparison import (
+    comparison_match_tokens,
+    comparison_question_score,
+    comparison_search_query,
+    comparison_subqueries,
+    comparison_token_variants,
+)
+from app.services.rag_citations import (
+    citation_from_context,
+    docling_source_metadata_from_metadata,
+    json_dict_list,
+    json_list,
+    json_string_list,
+    metadata_bool,
+    optional_metadata_text,
+    pdf_context_from_chunk,
+    retrieved_chunk_from_candidate,
+    source_location_label,
+)
+from app.services.rag_grounding import (
+    CONTEXT_FALLBACK_CHAR_LIMIT,
+    clean_context_snippet,
+    compose_fallback_answer,
+    grounding_system_prompt,
+    no_context_message,
+    normalize_context_text,
+    trim_text,
+    ungrounded_answer_message,
+)
+from app.services.rag_prompting import (
+    build_prompt,
+    focus_context_text,
+    render_context_for_prompt,
+    select_contexts,
+    trim_text_window,
+)
+from app.services.rag_types import (
+    CandidateChunk,
+    FinalizedAnswer,
+    PreparedAnswer,
+    RetrievalResult,
+    RetrievedChunk,
+    RetrievedContext,
+)
 from app.services.reranker_service import RerankerService
 from app.services.web_search_service import WebSearchError, WebSearchOfflineError, WebSearchResult, WebSearchService
 
 
-PDF_CITATION_PATTERN = re.compile(r"\[SourceID:\s*(?P<id>[^\]]+)\]", re.IGNORECASE)
-LEGACY_PDF_CITATION_PATTERN = re.compile(
-    r"\[Source:\s*(?P<pdf>.+?),\s*p\.(?P<page>\d+)(?:,\s*c\.(?P<chunk>\d+))?\]",
-    re.IGNORECASE,
-)
-WEB_CITATION_PATTERN = re.compile(r"\[Web:\s*(?P<url>https?://[^\]]+)\]", re.IGNORECASE)
-THINK_BLOCK_PATTERN = re.compile(r"<think\b[^>]*>.*?</think>", re.IGNORECASE | re.DOTALL)
-OPEN_THINK_BLOCK_PATTERN = re.compile(r"<think\b[^>]*>.*$", re.IGNORECASE | re.DOTALL)
-MODEL_THINKING_SENSITIVE_LINE_PATTERN = re.compile(
-    r"(?im)^[^\n]*(?:internal|hidden|system|developer)\s+prompt[^\n]*(?:\n|$)"
-    r"|^[^\n]*(?:chain[-\s]*of[-\s]*thought|internal policy|policy text)[^\n]*(?:\n|$)"
-)
-TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
 RRF_K = 60
 INTERACTIVE_RETRIEVAL_EMBED_TIMEOUT_SECONDS = 20.0
 INTERACTIVE_THINKING_GENERATE_TIMEOUT_SECONDS = 15.0
 INTERACTIVE_GENERATE_TIMEOUT_SECONDS = 45.0
 MODEL_THINKING_SUMMARY_TIMEOUT_SECONDS = 18.0
-PROMPT_HISTORY_USER_MESSAGE_LIMIT = 2
-PROMPT_PDF_CONTEXT_LIMIT = 3
-PROMPT_WEB_CONTEXT_LIMIT = 2
-PROMPT_PDF_CONTEXT_CHAR_LIMIT = 600
-PROMPT_WEB_CONTEXT_CHAR_LIMIT = 650
 MIN_TOPIC_RETRIEVAL_CANDIDATES = 5
 DIRECT_QA_MATCH_THRESHOLD = 0.7
-DIRECT_QA_MIN_TOKEN_COUNT = 4
-CONTEXT_FALLBACK_CHAR_LIMIT = 420
 MIN_INTERACTIVE_RERANK_CANDIDATES = 6
 MAX_INTERACTIVE_RERANK_CANDIDATES = 8
 DOMINANT_RESULT_SHARE = 0.75
 FUSED_SCORE_DOMINANCE_MARGIN = 0.01
 MODEL_THINKING_SEGMENT_CHAR_LIMIT = 2400
-PREVIEW_NOISE_LINE_PATTERN = re.compile(r"(?im)^\s*(?:page\s+\d+\b.*|[^\n\r]*copyright\b.*)$")
-ONE_SENTENCE_PATTERN = re.compile(r"\b(?:one|1)\s+(?:short\s+)?sentence\b", re.IGNORECASE)
-TWO_SENTENCE_PATTERN = re.compile(r"\b(?:two|2)\s+(?:short\s+)?sentences\b", re.IGNORECASE)
-THREE_SENTENCE_PATTERN = re.compile(r"\b(?:three|3)\s+(?:short\s+)?sentences\b", re.IGNORECASE)
-CONCISE_ANSWER_PATTERN = re.compile(
-    r"\b(?:brief(?:ly)?|concise(?:ly)?|short(?:er)?|summari[sz]e|summary|in brief|quick(?:ly)?)\b",
-    re.IGNORECASE,
-)
 LOW_SIGNAL_ANSWER_PREFIX_PATTERN = re.compile(
     r"^(?:in the above|in the below|the above|the below|but\b|and the|getinstance\b)",
     re.IGNORECASE,
 )
-COMPARISON_QUERY_PATTERN = re.compile(
-    r"\b(compare|comparison|contrast|difference(?:s)?|differentiate|vs\.?|versus)\b",
-    re.IGNORECASE,
-)
-BETWEEN_COMPARISON_PATTERN = re.compile(
-    r"\bbetween\s+(?P<left>.+?)\s+\band\b\s+(?P<right>.+)$",
-    re.IGNORECASE,
-)
-COMPARISON_SPLIT_PATTERN = re.compile(r"\b(?:and|vs\.?|versus)\b", re.IGNORECASE)
-DIRECT_QA_PATTERN = re.compile(
-    r"^\s*(?:question:\s*(?P<question>.+?)\n+\s*answer:\s*(?P<answer>.+)|(?P<numbered_question>\d{1,3}[.)]\s*.+?)\n+\n*(?P<numbered_answer>.+))$",
-    re.IGNORECASE | re.DOTALL,
-)
-COMPARISON_GENERIC_TOKENS = frozenset(
-    {
-        "java",
-        "class",
-        "classes",
-        "object",
-        "objects",
-        "type",
-        "types",
-    }
-)
 LOGGER = logging.getLogger(__name__)
-
-
-@dataclass
-class RetrievedChunk:
-    chunk_id: str
-    collection_id: str
-    document_id: str
-    pdf_name: str
-    page_number: int
-    chunk_index: int
-    text: str
-    parser: str | None = None
-    content_labels: tuple[str, ...] = ()
-    source_text: str | None = None
-    source_refs: tuple[str, ...] = ()
-    source_blocks: tuple[dict[str, Any], ...] = ()
-    has_table: bool = False
-
-
-@dataclass
-class CandidateChunk:
-    chunk_id: str
-    collection_id: str
-    document_id: str
-    pdf_name: str
-    page_number: int
-    chunk_index: int
-    text: str
-    parser: str | None = None
-    content_labels: tuple[str, ...] = ()
-    source_text: str | None = None
-    source_refs: tuple[str, ...] = ()
-    source_blocks: tuple[dict[str, Any], ...] = ()
-    has_table: bool = False
-    fused_score: float = 0.0
-    rerank_score: float | None = None
-
-
-@dataclass(frozen=True)
-class RetrievedContext:
-    id: str
-    kind: str
-    label: str
-    text: str
-    excerpt: str
-    document_id: str | None = None
-    pdf_name: str | None = None
-    page_number: int | None = None
-    chunk_index: int | None = None
-    parser: str | None = None
-    source_text: str | None = None
-    source_labels: tuple[str, ...] = ()
-    source_refs: tuple[str, ...] = ()
-    source_blocks: tuple[dict[str, Any], ...] = ()
-    source_location: str | None = None
-    has_table: bool = False
-    url: str | None = None
-    title: str | None = None
-
-
-@dataclass(frozen=True)
-class RetrievalResult:
-    chunks: list[RetrievedChunk]
-    top_rerank_score: float | None
-
-
-@dataclass
-class PreparedAnswer:
-    question: str
-    prompt: str
-    system_prompt: str
-    contexts: list[RetrievedContext]
-    shortcut_answer: str | None = None
-    shortcut_citations: list[CitationPayload] = field(default_factory=list)
-    tool_call: ToolCallPayload | None = None
-    web_search_used: bool = False
-    offline_warning: str | None = None
-    cross_session_turn_count: int = 0
-    response_mode: str = "grounded"
-    trace_detail: str | None = None
-    reasoning_segments: list[str] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class FinalizedAnswer:
-    answer: str
-    citations: list[CitationPayload]
-    model_thinking: str | None = None
-    generation_warning: str | None = None
 
 
 class RagService:
@@ -379,7 +305,7 @@ class RagService:
             )
 
         if last_result is not None:
-            if prepared.contexts and last_result.answer == self._ungrounded_answer_message():
+            if prepared.contexts and last_result.answer == ungrounded_answer_message():
                 return self._fallback_finalized_answer(
                     prepared.contexts,
                     generation_warning=(
@@ -440,7 +366,7 @@ class RagService:
                 prompt="",
                 system_prompt="You answer plainly.",
                 contexts=[],
-                shortcut_answer=self._no_context_message(
+                shortcut_answer=no_context_message(
                     web_search_enabled=False,
                     offline_warning=None,
                 ),
@@ -503,15 +429,7 @@ class RagService:
                 contexts=comparison_contexts,
                 history_messages=history_messages or [],
             )
-            system_prompt = (
-                "Answer only from the supplied evidence blocks. "
-                "Prefer PDF evidence when it directly answers the question. "
-                "Use web evidence only to fill gaps or answer current facts the PDFs do not cover. "
-                "If the evidence is insufficient, say so plainly. "
-                "Grounded prose matters more than repeating source markers. "
-                "If you include a source marker, copy it exactly from the evidence blocks. "
-                "Do not invent, repair, or paraphrase source markers."
-            )
+            system_prompt = grounding_system_prompt()
             return PreparedAnswer(
                 question=question,
                 prompt=prompt,
@@ -589,7 +507,7 @@ class RagService:
                 prompt="",
                 system_prompt="You answer plainly.",
                 contexts=[],
-                shortcut_answer=self._no_context_message(
+                shortcut_answer=no_context_message(
                     web_search_enabled=web_search_enabled,
                     offline_warning=offline_warning,
                 ),
@@ -621,15 +539,7 @@ class RagService:
             contexts=contexts,
             history_messages=history_messages or [],
         )
-        system_prompt = (
-            "Answer only from the supplied evidence blocks. "
-            "Prefer PDF evidence when it directly answers the question. "
-            "Use web evidence only to fill gaps or answer current facts the PDFs do not cover. "
-            "If the evidence is insufficient, say so plainly. "
-            "Grounded prose matters more than repeating source markers. "
-            "If you include a source marker, copy it exactly from the evidence blocks. "
-            "Do not invent, repair, or paraphrase source markers."
-        )
+        system_prompt = grounding_system_prompt()
         return PreparedAnswer(
             question=question,
             prompt=prompt,
@@ -659,7 +569,7 @@ class RagService:
             or self._references_unknown_sources(normalized_answer, contexts)
             or self._has_uncited_substantive_segments(normalized_answer, contexts)
         ):
-            return self._ungrounded_answer_message(), []
+            return ungrounded_answer_message(), []
         return clean_answer, citations
 
     def should_retry_without_thinking(
@@ -668,7 +578,7 @@ class RagService:
         citations: list[CitationPayload],
         contexts: list[RetrievedContext],
     ) -> bool:
-        return bool(contexts) and not citations and answer == self._ungrounded_answer_message()
+        return bool(contexts) and not citations and answer == ungrounded_answer_message()
 
     def _finalize_generation_result(
         self,
@@ -692,7 +602,7 @@ class RagService:
         model_thinking: str | None = None,
     ) -> FinalizedAnswer:
         answer, citations = self.finalize_answer(raw_answer, contexts)
-        if contexts and not citations and answer == self._ungrounded_answer_message():
+        if contexts and not citations and answer == ungrounded_answer_message():
             return self._fallback_finalized_answer(
                 contexts,
                 generation_warning=(
@@ -1253,112 +1163,11 @@ class RagService:
                 groups.append(hit_ids)
         return groups
 
-    @classmethod
-    def _comparison_subqueries(cls, question: str) -> list[str]:
-        normalized = " ".join(question.strip().split())
-        if not normalized or not COMPARISON_QUERY_PATTERN.search(normalized):
-            return []
-
-        normalized = re.sub(
-            r"\b(?:based only on|based on|using only)\b.*$",
-            "",
-            normalized,
-            flags=re.IGNORECASE,
-        ).strip()
-        normalized = re.sub(
-            r"\b(?:in|with)\s+(?:one|two|three|1|2|3)\s+(?:short\s+)?sentences?\b.*$",
-            "",
-            normalized,
-            flags=re.IGNORECASE,
-        ).strip()
-
-        between_match = BETWEEN_COMPARISON_PATTERN.search(normalized)
-        if between_match:
-            raw_parts = [between_match.group("left"), between_match.group("right")]
-        else:
-            raw_parts = COMPARISON_SPLIT_PATTERN.split(normalized)
-
-        subqueries: list[str] = []
-        for part in raw_parts:
-            cleaned = re.sub(
-                r"^(?:compare|comparison|contrast|difference(?:s)?(?: between)?|differentiate)\s+",
-                "",
-                part.strip(),
-                flags=re.IGNORECASE,
-            )
-            cleaned = cleaned.strip(" ?.,:;")
-            if len(cls._tokenize(cleaned)) < 2:
-                continue
-            if cleaned.lower() == question.strip().lower():
-                continue
-            subqueries.append(cleaned)
-
-        return list(dict.fromkeys(subqueries))
-
-    @classmethod
-    def _comparison_search_query(cls, subquery: str) -> str:
-        tokens = [token for token in cls._tokenize(subquery) if len(token) > 2]
-        if len(tokens) <= 1:
-            return subquery.strip()
-
-        filtered_tokens = [
-            token
-            for token in tokens
-            if token not in COMPARISON_GENERIC_TOKENS
-        ]
-        if not filtered_tokens:
-            return subquery.strip()
-        return " ".join(filtered_tokens)
-
-    @classmethod
-    def _comparison_question_score(cls, subquery: str, candidate: CandidateChunk) -> float:
-        qa_pair = cls._extract_direct_qa_pair(candidate.text)
-        candidate_question = qa_pair[0] if qa_pair is not None else candidate.text
-        query_tokens = cls._comparison_match_tokens(subquery, drop_generic=True)
-        candidate_tokens = cls._comparison_match_tokens(candidate_question)
-        if not query_tokens or not candidate_tokens:
-            return 0.0
-
-        overlap = query_tokens & candidate_tokens
-        if not overlap:
-            return 0.0
-
-        recall = len(overlap) / len(query_tokens)
-        precision = len(overlap) / len(candidate_tokens)
-        return (2 * recall * precision) / (recall + precision)
-
-    @classmethod
-    def _comparison_match_tokens(
-        cls,
-        text: str,
-        *,
-        drop_generic: bool = False,
-    ) -> set[str]:
-        tokens = [token for token in cls._tokenize(text) if len(token) > 2]
-        if drop_generic and len(tokens) > 1:
-            filtered_tokens = [
-                token
-                for token in tokens
-                if token not in COMPARISON_GENERIC_TOKENS
-            ]
-            if filtered_tokens:
-                tokens = filtered_tokens
-
-        normalized_tokens: set[str] = set()
-        for token in tokens:
-            normalized_tokens.update(cls._comparison_token_variants(token))
-        return normalized_tokens
-
-    @staticmethod
-    def _comparison_token_variants(token: str) -> set[str]:
-        variants = {token}
-        if len(token) > 4 and token.endswith("ies"):
-            variants.add(f"{token[:-3]}y")
-        if len(token) > 4 and token.endswith("es"):
-            variants.add(token[:-2])
-        if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
-            variants.add(token[:-1])
-        return {variant for variant in variants if len(variant) > 2}
+    _comparison_subqueries = staticmethod(comparison_subqueries)
+    _comparison_search_query = staticmethod(comparison_search_query)
+    _comparison_question_score = staticmethod(comparison_question_score)
+    _comparison_match_tokens = staticmethod(comparison_match_tokens)
+    _comparison_token_variants = staticmethod(comparison_token_variants)
 
     def _comparison_contexts(
         self,
@@ -1478,7 +1287,7 @@ class RagService:
             if self._is_informative_answer_sentence(candidate):
                 return candidate
 
-        normalized = self._normalize_context_text(context.text)
+        normalized = normalize_context_text(context.text)
         fallback = re.sub(
             r"^(?:\d{1,3}[.)]\s*)?.+?\?\s*",
             "",
@@ -1507,7 +1316,7 @@ class RagService:
             return False
         if LOW_SIGNAL_ANSWER_PREFIX_PATTERN.match(sentence):
             return False
-        return len(TOKEN_PATTERN.findall(sentence)) >= 4
+        return len(tokenize(sentence)) >= 4
 
     def _vector_candidates_for_collection(
         self,
@@ -1590,56 +1399,7 @@ class RagService:
             top_rerank_score=reranked[0].rerank_score if reranked else None,
         )
 
-    def _build_prompt(
-        self,
-        *,
-        question: str,
-        contexts: list[RetrievedContext],
-        history_messages: Sequence[dict[str, str]],
-    ) -> str:
-        prompt_sections = [
-            "Use only the retrieved evidence below to answer the user's question.",
-            "Each evidence block starts with an exact source marker. Reuse a marker verbatim only when you need to cite directly.",
-        ]
-        pdf_contexts = [context for context in contexts if context.kind == "pdf"]
-        web_contexts = [context for context in contexts if context.kind == "web"]
-        user_history = [message for message in history_messages if message.get("role") == "user"]
-
-        if pdf_contexts:
-            prompt_sections.append(
-                "PDF context:\n"
-                + "\n\n".join(
-                    self._render_context_for_prompt(question=question, context=context)
-                    for context in pdf_contexts
-                )
-            )
-
-        if web_contexts:
-            prompt_sections.append(
-                "Web search context:\n"
-                + "\n\n".join(
-                    self._render_context_for_prompt(question=question, context=context)
-                    for context in web_contexts
-                )
-            )
-
-        if user_history and looks_context_dependent(question):
-            rendered_history = "\n".join(
-                f"User: {message['content']}"
-                for message in user_history[-PROMPT_HISTORY_USER_MESSAGE_LIMIT:]
-            )
-            prompt_sections.append(
-                "Recent user messages for conversational context only (not evidence):\n"
-                f"{rendered_history}"
-            )
-
-        prompt_sections.append(
-            f"Question: {question}\n\n"
-            "Answer in plain prose. Prefer one to three short paragraphs unless the user asks for a list or more detail. "
-            "If the user asks for a specific sentence count or a brief answer, honor that strictly. "
-            "Keep the answer tightly grounded in the evidence. If you include a source marker, copy it exactly from the context."
-        )
-        return "\n\n".join(prompt_sections)
+    _build_prompt = staticmethod(build_prompt)
 
     def _direct_context_shortcut(
         self,
@@ -1659,7 +1419,7 @@ class RagService:
             question_score = self._question_match_score(question, qa_question)
             if question_score < DIRECT_QA_MATCH_THRESHOLD:
                 continue
-            cleaned_answer = self._clean_context_snippet(
+            cleaned_answer = clean_context_snippet(
                 qa_answer,
                 max_chars=CONTEXT_FALLBACK_CHAR_LIMIT * 2,
             )
@@ -1709,7 +1469,7 @@ class RagService:
             question_score = self._question_match_score(question, qa_question)
             if question_score < DIRECT_QA_MATCH_THRESHOLD:
                 continue
-            cleaned_answer = self._clean_context_snippet(
+            cleaned_answer = clean_context_snippet(
                 qa_answer,
                 max_chars=CONTEXT_FALLBACK_CHAR_LIMIT * 2,
             )
@@ -1729,110 +1489,11 @@ class RagService:
         _rank, best_context, best_answer = best_match
         return best_context, best_answer
 
-    @classmethod
-    def _extract_direct_qa_pair(cls, text: str) -> tuple[str, str] | None:
-        normalized_text = cls._normalize_context_text(text)
-        match = DIRECT_QA_PATTERN.match(normalized_text)
-        if not match:
-            return None
-
-        if match.group("question") and match.group("answer"):
-            question = cls._clean_context_snippet(match.group("question"), max_chars=CONTEXT_FALLBACK_CHAR_LIMIT)
-            answer = cls._clean_qa_answer_text(match.group("answer"))
-            return (question, answer) if question and answer else None
-
-        numbered_text = re.sub(r"^\s*\d{1,3}[.)]\s*", "", normalized_text)
-        question_boundaries = [
-            question_mark.end()
-            for question_mark in re.finditer(r"\?", numbered_text[: CONTEXT_FALLBACK_CHAR_LIMIT * 2])
-        ]
-        for boundary in reversed(question_boundaries):
-            numbered_question = cls._clean_context_snippet(
-                numbered_text[:boundary],
-                max_chars=CONTEXT_FALLBACK_CHAR_LIMIT,
-            )
-            numbered_answer = cls._clean_qa_answer_text(numbered_text[boundary:])
-            if numbered_question and numbered_answer:
-                return numbered_question, numbered_answer
-
-        numbered_question = cls._clean_context_snippet(
-            re.sub(r"^\d{1,3}[.)]\s*", "", match.group("numbered_question") or ""),
-            max_chars=CONTEXT_FALLBACK_CHAR_LIMIT,
-        )
-        numbered_answer = cls._clean_qa_answer_text(match.group("numbered_answer") or "")
-        return (numbered_question, numbered_answer) if numbered_question and numbered_answer else None
-
-    @classmethod
-    def _clean_qa_answer_text(cls, text: str) -> str:
-        cleaned = re.sub(r"^\s*answer:\s*", "", text or "", flags=re.IGNORECASE).strip()
-        repeated_question_match = re.match(
-            r"^(?:question:\s*|(?:\d{1,3}[.)]\s*))?(?P<question>.+?\?)\s*(?P<rest>.+)$",
-            cleaned,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
-        if repeated_question_match and repeated_question_match.group("rest").strip():
-            cleaned = repeated_question_match.group("rest").strip()
-        return cls._clean_context_snippet(
-            cleaned,
-            max_chars=CONTEXT_FALLBACK_CHAR_LIMIT * 2,
-        )
-
-    @classmethod
-    def _question_match_score(cls, user_question: str, candidate_question: str) -> float:
-        user_tokens = {
-            token
-            for token in cls._tokenize(cls._normalize_question_for_matching(user_question))
-            if len(token) > 2
-        }
-        candidate_tokens = {
-            token
-            for token in cls._tokenize(candidate_question)
-            if len(token) > 2
-        }
-        if len(user_tokens) < DIRECT_QA_MIN_TOKEN_COUNT or len(candidate_tokens) < DIRECT_QA_MIN_TOKEN_COUNT:
-            return 0.0
-        overlap = user_tokens & candidate_tokens
-        if not overlap:
-            return 0.0
-        return len(overlap) / max(1, min(len(user_tokens), len(candidate_tokens)))
-
-    @staticmethod
-    def _normalize_question_for_matching(question: str) -> str:
-        normalized = " ".join(question.strip().split())
-        normalized = re.sub(
-            r"\b(?:based only on|based on|using only)\b.*$",
-            "",
-            normalized,
-            flags=re.IGNORECASE,
-        ).strip()
-        normalized = re.sub(
-            r"\b(?:in|with)\s+(?:one|two|three|1|2|3)\s+(?:short\s+)?sentences?\b.*$",
-            "",
-            normalized,
-            flags=re.IGNORECASE,
-        ).strip()
-        return normalized or question
-
-    @classmethod
-    def _shape_shortcut_answer(cls, question: str, answer: str) -> str:
-        normalized_answer = cls._normalize_answer_text(answer)
-        sentences = [
-            sentence.strip()
-            for sentence in re.split(r"(?<=[.!?])\s+", normalized_answer)
-            if sentence.strip()
-        ]
-        if not sentences:
-            return normalized_answer
-
-        if ONE_SENTENCE_PATTERN.search(question):
-            return sentences[0]
-        if TWO_SENTENCE_PATTERN.search(question):
-            return " ".join(sentences[:2])
-        if THREE_SENTENCE_PATTERN.search(question):
-            return " ".join(sentences[:3])
-        if CONCISE_ANSWER_PATTERN.search(question):
-            return " ".join(sentences[:2])
-        return normalized_answer
+    _extract_direct_qa_pair = staticmethod(extract_direct_qa_pair)
+    _clean_qa_answer_text = staticmethod(clean_qa_answer_text)
+    _question_match_score = staticmethod(question_match_score)
+    _normalize_question_for_matching = staticmethod(normalize_question_for_matching)
+    _shape_shortcut_answer = staticmethod(shape_shortcut_answer)
 
     def _fallback_finalized_answer(
         self,
@@ -1840,53 +1501,23 @@ class RagService:
         *,
         generation_warning: str,
     ) -> FinalizedAnswer:
-        for context in contexts:
-            if context.kind != "pdf":
-                continue
-            qa_pair = self._extract_direct_qa_pair(context.text)
-            if qa_pair is None:
-                continue
-            _qa_question, qa_answer = qa_pair
-            if qa_answer:
-                return FinalizedAnswer(
-                    answer=qa_answer,
-                    citations=[self._citation_from_context(context)],
-                    generation_warning=generation_warning,
-                )
-
-        best_contexts = contexts[:2]
-        fallback_passages = [
-            self._clean_context_snippet(context.text, max_chars=CONTEXT_FALLBACK_CHAR_LIMIT)
-            for context in best_contexts
-        ]
-        fallback_answer = "\n\n".join(
-            passage
-            for passage in fallback_passages
-            if passage
-        ).strip()
-        if not fallback_answer:
-            fallback_answer = self._ungrounded_answer_message()
-        return FinalizedAnswer(
-            answer=fallback_answer,
-            citations=[self._citation_from_context(context) for context in best_contexts],
+        fallback_answer = compose_fallback_answer(
+            contexts,
             generation_warning=generation_warning,
+            extract_direct_qa_pair=self._extract_direct_qa_pair,
+        )
+        return FinalizedAnswer(
+            answer=fallback_answer.answer,
+            citations=[
+                self._citation_from_context(context)
+                for context in fallback_answer.citation_contexts
+            ],
+            generation_warning=fallback_answer.generation_warning,
         )
 
     @staticmethod
     def _is_interactive_timeout(error: Exception) -> bool:
         return isinstance(error, (httpx.TimeoutException, TimeoutError))
-
-    @staticmethod
-    def _normalize_context_text(text: str) -> str:
-        cleaned = PREVIEW_NOISE_LINE_PATTERN.sub("", text or "")
-        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-        return cleaned.strip()
-
-    @classmethod
-    def _clean_context_snippet(cls, text: str, *, max_chars: int) -> str:
-        normalized = cls._normalize_context_text(text)
-        normalized = re.sub(r"\s+", " ", normalized).strip()
-        return cls._trim_text(normalized, max_chars) if normalized else ""
 
     @staticmethod
     def _interactive_generation_options(
@@ -1917,90 +1548,14 @@ class RagService:
             "num_predict": num_predict,
         }
 
-    def _render_context_for_prompt(
-        self,
-        *,
-        question: str,
-        context: RetrievedContext,
-    ) -> str:
-        max_chars = (
-            PROMPT_WEB_CONTEXT_CHAR_LIMIT
-            if context.kind == "web"
-            else PROMPT_PDF_CONTEXT_CHAR_LIMIT
-        )
-        return (
-            f"{context.label}\n"
-            f"{self._focus_context_text(question=question, text=context.text, max_chars=max_chars)}"
-        )
-
-    def _focus_context_text(
-        self,
-        *,
-        question: str,
-        text: str,
-        max_chars: int,
-    ) -> str:
-        normalized = re.sub(r"\s+", " ", text).strip()
-        if len(normalized) <= max_chars:
-            return normalized
-
-        query_tokens = {
-            token
-            for token in self._tokenize(question)
-            if len(token) > 2
-        }
-        if not query_tokens:
-            return self._trim_text(normalized, max_chars)
-
-        stride = max(120, max_chars // 3)
-        max_start = max(len(normalized) - max_chars, 0)
-        window_starts = list(range(0, max_start + 1, stride)) or [0]
-        if window_starts[-1] != max_start:
-            window_starts.append(max_start)
-
-        best_start = 0
-        best_score = -1
-        for start in window_starts:
-            candidate = normalized[start : start + max_chars]
-            score = len(query_tokens & set(self._tokenize(candidate)))
-            if score > best_score:
-                best_score = score
-                best_start = start
-
-        return self._trim_text_window(normalized, best_start, max_chars)
+    _render_context_for_prompt = staticmethod(render_context_for_prompt)
+    _focus_context_text = staticmethod(focus_context_text)
 
     @staticmethod
     def _trim_text(text: str, max_chars: int) -> str:
-        if len(text) <= max_chars:
-            return text
-        snippet = text[:max_chars].rstrip()
-        last_space = snippet.rfind(" ")
-        if last_space >= max_chars // 2:
-            snippet = snippet[:last_space]
-        return f"{snippet.rstrip(' ,;:')}..."
+        return trim_text(text, max_chars)
 
-    @staticmethod
-    def _trim_text_window(text: str, start: int, max_chars: int) -> str:
-        max_start = max(len(text) - max_chars, 0)
-        start = max(0, min(start, max_start))
-        end = min(len(text), start + max_chars)
-
-        if start > 0:
-            while start < end and not text[start].isspace():
-                start += 1
-        if end < len(text):
-            while end > start and not text[end - 1].isspace():
-                end -= 1
-
-        snippet = text[start:end].strip()
-        if not snippet:
-            return RagService._trim_text(text, max_chars)
-
-        if start > 0:
-            snippet = f"...{snippet}"
-        if end < len(text):
-            snippet = f"{snippet.rstrip(' ,;:')}..."
-        return snippet
+    _trim_text_window = staticmethod(trim_text_window)
 
     def _extract_citations(
         self,
@@ -2061,7 +1616,7 @@ class RagService:
 
     @staticmethod
     def _tokenize(text: str) -> list[str]:
-        return TOKEN_PATTERN.findall(text.lower())
+        return tokenize(text)
 
     def _build_fts_query(self, text: str) -> str:
         tokens = self._tokenize(text)
@@ -2080,121 +1635,22 @@ class RagService:
     def _rrf_score(rank: int) -> float:
         return 1.0 / (RRF_K + rank + 1)
 
-    @staticmethod
-    def _retrieved_chunk_from_candidate(candidate: CandidateChunk) -> RetrievedChunk:
-        return RetrievedChunk(
-            chunk_id=candidate.chunk_id,
-            collection_id=candidate.collection_id,
-            document_id=candidate.document_id,
-            pdf_name=candidate.pdf_name,
-            page_number=candidate.page_number,
-            chunk_index=candidate.chunk_index,
-            text=candidate.text,
-            parser=candidate.parser,
-            content_labels=candidate.content_labels,
-            source_text=candidate.source_text,
-            source_refs=candidate.source_refs,
-            source_blocks=candidate.source_blocks,
-            has_table=candidate.has_table,
-        )
-
-    def _pdf_context_from_chunk(self, chunk: RetrievedChunk) -> RetrievedContext:
-        context_id = chunk.chunk_id
-        excerpt_source = chunk.source_text or chunk.text
-        return RetrievedContext(
-            id=context_id,
-            kind="pdf",
-            label=f"[SourceID: {context_id}]",
-            text=chunk.text,
-            excerpt=self._clean_context_snippet(excerpt_source, max_chars=280),
-            document_id=chunk.document_id,
-            pdf_name=chunk.pdf_name,
-            page_number=chunk.page_number,
-            chunk_index=chunk.chunk_index,
-            parser=chunk.parser,
-            source_text=chunk.source_text,
-            source_labels=chunk.content_labels,
-            source_refs=chunk.source_refs,
-            source_blocks=chunk.source_blocks,
-            source_location=self._source_location_label(chunk.content_labels),
-            has_table=chunk.has_table,
-        )
-
-    @classmethod
-    def _docling_source_metadata_from_metadata(cls, metadata: dict[str, object]) -> dict[str, object]:
-        labels = tuple(cls._json_string_list(metadata.get("content_labels")))
-        source_refs = tuple(cls._json_string_list(metadata.get("source_refs")))
-        source_blocks = tuple(cls._json_dict_list(metadata.get("source_blocks")))
-        parser = cls._optional_metadata_text(metadata.get("parser"))
-        source_text = cls._optional_metadata_text(metadata.get("source_text"))
-        has_table = cls._metadata_bool(metadata.get("has_table")) or "table" in labels
-        return {
-            "parser": parser,
-            "content_labels": labels,
-            "source_text": source_text,
-            "source_refs": source_refs,
-            "source_blocks": source_blocks,
-            "has_table": has_table,
-        }
-
-    @staticmethod
-    def _optional_metadata_text(value: object) -> str | None:
-        if value is None:
-            return None
-        text = str(value).strip()
-        return text or None
-
-    @classmethod
-    def _json_string_list(cls, value: object) -> list[str]:
-        raw_items = cls._json_list(value)
-        return [str(item) for item in raw_items if str(item).strip()]
-
-    @classmethod
-    def _json_dict_list(cls, value: object) -> list[dict[str, Any]]:
-        raw_items = cls._json_list(value)
-        return [item for item in raw_items if isinstance(item, dict)]
-
-    @staticmethod
-    def _json_list(value: object) -> list[Any]:
-        if isinstance(value, list):
-            return value
-        if not isinstance(value, str) or not value.strip():
-            return []
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            return []
-        return parsed if isinstance(parsed, list) else []
-
-    @staticmethod
-    def _metadata_bool(value: object) -> bool:
-        if isinstance(value, bool):
-            return value
-        if value is None:
-            return False
-        if isinstance(value, (int, float)):
-            return bool(value)
-        return str(value).strip().lower() in {"1", "true", "yes", "on"}
-
-    @staticmethod
-    def _source_location_label(labels: Sequence[str]) -> str | None:
-        display_labels = [
-            label.replace("_", " ")
-            for label in labels
-            if label and label not in {"text", "paragraph"}
-        ]
-        if not display_labels:
-            return None
-        return " + ".join(display_labels[:3])
+    _retrieved_chunk_from_candidate = staticmethod(retrieved_chunk_from_candidate)
+    _pdf_context_from_chunk = staticmethod(pdf_context_from_chunk)
+    _docling_source_metadata_from_metadata = staticmethod(docling_source_metadata_from_metadata)
+    _optional_metadata_text = staticmethod(optional_metadata_text)
+    _json_string_list = staticmethod(json_string_list)
+    _json_dict_list = staticmethod(json_dict_list)
+    _json_list = staticmethod(json_list)
+    _metadata_bool = staticmethod(metadata_bool)
+    _source_location_label = staticmethod(source_location_label)
 
     def _select_contexts(
         self,
         pdf_contexts: list[RetrievedContext],
         web_contexts: list[RetrievedContext],
     ) -> list[RetrievedContext]:
-        selected_pdf_contexts = pdf_contexts[: min(PROMPT_PDF_CONTEXT_LIMIT, self._top_k)]
-        selected_web_contexts = web_contexts[: min(PROMPT_WEB_CONTEXT_LIMIT, self._top_k)]
-        return [*selected_pdf_contexts, *selected_web_contexts]
+        return select_contexts(pdf_contexts, web_contexts, top_k=self._top_k)
 
     def _web_contexts_from_results(self, results: list[WebSearchResult]) -> list[RetrievedContext]:
         return [
@@ -2283,24 +1739,6 @@ class RagService:
         return False
 
     @staticmethod
-    def _no_context_message(*, web_search_enabled: bool, offline_warning: str | None) -> str:
-        if offline_warning:
-            return (
-                f"{offline_warning} "
-                "Your PDFs do not contain enough information to answer that confidently."
-            )
-        if web_search_enabled:
-            return (
-                "I couldn't find enough relevant information in your PDFs or from web search "
-                "to answer that confidently."
-            )
-        return "I couldn't find enough support in your PDFs to answer that confidently."
-
-    @staticmethod
-    def _ungrounded_answer_message() -> str:
-        return "I couldn't ground a confident answer in the retrieved sources."
-
-    @staticmethod
     def _reasoning_segments_from(label: str, thinking: str | None) -> list[str]:
         cleaned = (thinking or "").strip()
         if not cleaned:
@@ -2320,184 +1758,17 @@ class RagService:
             parts.append(f"{web_count} web result{'s' if web_count != 1 else ''}")
         return ", ".join(parts)
 
-    @classmethod
-    def _clean_model_thinking_summary(cls, summary: str) -> str | None:
-        cleaned = cls._strip_thinking_blocks(summary)
-        cleaned = re.sub(r"\[SourceID:[^\]]+\]", "", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\[Web:[^\]]+\]", "", cleaned, flags=re.IGNORECASE)
-        cleaned = MODEL_THINKING_SENSITIVE_LINE_PATTERN.sub("", cleaned)
-        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
-        if not cleaned:
-            return None
-        if "reasoning summary" not in cleaned[:80].lower():
-            cleaned = f"Reasoning summary\n\n{cleaned}"
-        return cleaned[:1400].rstrip()
-
-    @staticmethod
-    def _strip_thinking_blocks(answer: str) -> str:
-        without_closed_blocks = THINK_BLOCK_PATTERN.sub("", answer)
-        return OPEN_THINK_BLOCK_PATTERN.sub("", without_closed_blocks).strip()
-
-    @staticmethod
-    def _strip_citation_markers(answer: str) -> str:
-        stripped = PDF_CITATION_PATTERN.sub("", answer)
-        stripped = LEGACY_PDF_CITATION_PATTERN.sub("", stripped)
-        stripped = WEB_CITATION_PATTERN.sub("", stripped)
-        return re.sub(r"\s{2,}", " ", stripped)
-
-    @staticmethod
-    def _normalize_answer_text(answer: str) -> str:
-        normalized = re.sub(r"\s+([,.;:!?])", r"\1", answer)
-        normalized = re.sub(r"([(\[])\s+", r"\1", normalized)
-        normalized = re.sub(r"\s+([)\]])", r"\1", normalized)
-        normalized = re.sub(r"\s{2,}", " ", normalized).strip()
-        if normalized.endswith('"') and not normalized.startswith('"'):
-            normalized = normalized[:-1].rstrip()
-        if normalized.endswith("'") and not normalized.startswith("'"):
-            normalized = normalized[:-1].rstrip()
-        return normalized
-
-    def _best_page_context(
-        self,
-        answer: str,
-        marker_start: int,
-        page_contexts: list[RetrievedContext],
-    ) -> RetrievedContext | None:
-        if not page_contexts:
-            return None
-        if len(page_contexts) == 1:
-            return page_contexts[0]
-
-        claim_tokens = set(self._tokenize(self._claim_window(answer, marker_start)))
-        if not claim_tokens:
-            return page_contexts[0]
-
-        return max(
-            page_contexts,
-            key=lambda context: len(claim_tokens & set(self._tokenize(context.text))),
-        )
-
-    @staticmethod
-    def _claim_window(answer: str, marker_start: int) -> str:
-        window_start = max(0, marker_start - 260)
-        prefix = answer[window_start:marker_start]
-        boundary = max(prefix.rfind("."), prefix.rfind("!"), prefix.rfind("?"), prefix.rfind("\n"))
-        if boundary >= 0:
-            prefix = prefix[boundary + 1 :]
-        return prefix.strip()
-
-    @staticmethod
-    def _substantive_segments(answer: str) -> list[str]:
-        segments: list[str] = []
-        for segment in re.split(r"(\n\s*\n+)", answer.strip()):
-            if not segment or segment.isspace():
-                continue
-            if not TOKEN_PATTERN.search(segment):
-                continue
-            segments.append(segment.strip())
-        return segments
-
-    def _has_uncited_substantive_segments(
-        self,
-        answer: str,
-        contexts: list[RetrievedContext],
-    ) -> bool:
-        for segment in self._substantive_segments(answer):
-            if (
-                PDF_CITATION_PATTERN.search(segment)
-                or LEGACY_PDF_CITATION_PATTERN.search(segment)
-                or WEB_CITATION_PATTERN.search(segment)
-            ):
-                continue
-            if self._best_context_for_segment(segment, contexts) is None:
-                return True
-        return False
-
-    @staticmethod
-    def _references_unknown_sources(answer: str, contexts: list[RetrievedContext]) -> bool:
-        known_pdf_ids = {
-            context.id
-            for context in contexts
-            if context.kind == "pdf"
-        }
-        known_pdf_pages = {
-            (context.pdf_name, context.page_number)
-            for context in contexts
-            if context.kind == "pdf"
-            and context.pdf_name is not None
-            and context.page_number is not None
-        }
-        known_web_urls = {
-            context.url
-            for context in contexts
-            if context.kind == "web" and context.url is not None
-        }
-
-        for match in PDF_CITATION_PATTERN.finditer(answer):
-            if match.group("id").strip() not in known_pdf_ids:
-                return True
-
-        for match in LEGACY_PDF_CITATION_PATTERN.finditer(answer):
-            pdf_name = match.group("pdf").strip()
-            page_number = int(match.group("page"))
-            if (pdf_name, page_number) not in known_pdf_pages:
-                return True
-
-        for match in WEB_CITATION_PATTERN.finditer(answer):
-            if match.group("url").strip() not in known_web_urls:
-                return True
-
-        return False
-
-    def _derive_citations_from_answer(
-        self,
-        answer: str,
-        contexts: list[RetrievedContext],
-    ) -> list[CitationPayload]:
-        citations_by_id: dict[str, CitationPayload] = {}
-        for segment in self._substantive_segments(answer):
-            context = self._best_context_for_segment(segment, contexts)
-            if context is None:
-                return []
-            citations_by_id[context.id] = self._citation_from_context(context)
-        return list(citations_by_id.values())
-
-    def _best_context_for_segment(
-        self,
-        segment: str,
-        contexts: list[RetrievedContext],
-    ) -> RetrievedContext | None:
-        segment_tokens = set(self._tokenize(segment))
-        if len(segment_tokens) < 2:
-            return None
-
-        best_context: RetrievedContext | None = None
-        best_score = 0.0
-        best_overlap = 0
-        for context in contexts:
-            context_tokens = set(self._tokenize(context.text))
-            overlap = segment_tokens & context_tokens
-            if not overlap:
-                continue
-
-            score = len(overlap) / max(len(segment_tokens), 1)
-            if context.title:
-                title_tokens = set(self._tokenize(context.title))
-                if title_tokens:
-                    score += 0.2 * (len(segment_tokens & title_tokens) / len(title_tokens))
-
-            if score > best_score or (score == best_score and len(overlap) > best_overlap):
-                best_context = context
-                best_score = score
-                best_overlap = len(overlap)
-
-        if best_context is None:
-            return None
-
-        minimum_overlap = 3 if len(segment_tokens) >= 6 else 2
-        if best_overlap < minimum_overlap and best_score < 0.2:
-            return None
-        return best_context
+    _clean_model_thinking_summary = staticmethod(clean_model_thinking_summary)
+    _strip_thinking_blocks = staticmethod(strip_thinking_blocks)
+    _strip_citation_markers = staticmethod(strip_citation_markers)
+    _normalize_answer_text = staticmethod(normalize_answer_text)
+    _best_page_context = staticmethod(best_page_context)
+    _claim_window = staticmethod(claim_window)
+    _substantive_segments = staticmethod(substantive_segments)
+    _has_uncited_substantive_segments = staticmethod(has_uncited_substantive_segments)
+    _references_unknown_sources = staticmethod(references_unknown_sources)
+    _derive_citations_from_answer = staticmethod(derive_citations_from_answer)
+    _best_context_for_segment = staticmethod(best_context_for_segment)
 
     @staticmethod
     def _citation_from_context(context: RetrievedContext) -> CitationPayload:

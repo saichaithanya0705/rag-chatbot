@@ -6,7 +6,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const frontendRoot = resolve(__dirname, "..");
 const distRoot = resolve(frontendRoot, "dist");
 const indexHtmlPath = resolve(distRoot, "index.html");
-const staticRoutes = ["chat", "pipeline"];
+const staticRoutes = ["chat", "pipeline", "knowledge-graph"];
 
 async function main() {
   const indexHtml = await readFile(indexHtmlPath, "utf8");

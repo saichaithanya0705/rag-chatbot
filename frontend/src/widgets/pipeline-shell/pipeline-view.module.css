@@ -47,8 +47,88 @@
 
 .collectionsSurface,
 .uploadSurface,
-.graphSurface {
+.graphSurface,
+.graphPreviewSurface {
   padding: 16px;
+}
+
+.graphPreviewHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.graphPreviewTitle {
+  color: var(--text-strong);
+  font-family: var(--font-heading);
+  font-size: var(--font-lg);
+}
+
+.graphPreviewText {
+  margin-top: 4px;
+  color: var(--text-subtle-aa);
+  font-size: var(--font-sm);
+}
+
+.graphPreviewAction {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0.5px solid var(--accent-border);
+  border-radius: 8px;
+  background: var(--surface-accent);
+  color: var(--accent-ink);
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: var(--font-base);
+  white-space: nowrap;
+}
+
+.graphPreviewAction:hover {
+  background: rgba(127, 119, 221, 0.16);
+}
+
+.graphPreviewLinks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.graphPreviewLink {
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0.5px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface-base);
+  color: var(--text-strong);
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: var(--font-sm);
+  text-align: left;
+}
+
+.graphPreviewLink:hover {
+  background: var(--surface-soft);
+}
+
+.graphPreviewLink span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graphPreviewLink svg {
+  color: var(--text-subtle-aa);
+}
+
+.graphPreviewLink strong {
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
 }
 
 .collectionsHeader {

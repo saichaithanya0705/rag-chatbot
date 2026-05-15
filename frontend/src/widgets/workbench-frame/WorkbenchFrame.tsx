@@ -1,14 +1,16 @@
 import { useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useWorkbench } from "@/app/providers/workbench/WorkbenchProvider";
 import { Toast } from "@/shared/ui/toast/Toast";
 import { ChatView } from "@/widgets/chat-shell/ChatView";
+import { KnowledgeGraphExplorer } from "@/widgets/knowledge-graph-explorer/KnowledgeGraphExplorer";
 import { SessionSidebar } from "@/widgets/chat-shell/SessionSidebar";
 import { PdfViewerPanel } from "@/widgets/pdf-viewer/PdfViewerPanel";
 import { PipelineView } from "@/widgets/pipeline-shell/PipelineView";
 import styles from "@/widgets/workbench-frame/workbench-frame.module.css";
 
 interface WorkbenchFrameProps {
-  activeView: "chat" | "pipeline";
+  activeView: "chat" | "pipeline" | "knowledge-graph";
 }
 
 function WorkbenchStatePanel({
@@ -39,6 +41,7 @@ function WorkbenchStatePanel({
 
 export function WorkbenchFrame({ activeView }: WorkbenchFrameProps) {
   const { state, actions } = useWorkbench();
+  const navigate = useNavigate();
   const mainRef = useRef<HTMLElement | null>(null);
   const isCompactPdfDialog =
     activeView === "chat" &&
@@ -46,16 +49,16 @@ export function WorkbenchFrame({ activeView }: WorkbenchFrameProps) {
     Boolean(state.pdfPreview || state.pdfPreviewRequest || state.isPdfPreviewLoading || state.pdfPreviewError);
 
   useEffect(() => {
-    if (activeView === "pipeline" && state.pdfPreviewRequest) {
+    if (activeView !== "chat" && state.pdfPreviewRequest) {
       actions.closePdfPreview();
     }
   }, [activeView, state.pdfPreviewRequest, actions]);
 
   useEffect(() => {
-    if (activeView === "pipeline" && state.sidebarOpen) {
+    if (activeView !== "chat" && state.isCompactViewport && state.sidebarOpen) {
       actions.setSidebarOpen(false);
     }
-  }, [activeView, state.sidebarOpen, actions]);
+  }, [activeView, state.isCompactViewport, state.sidebarOpen, actions]);
 
   useEffect(() => {
     const mainElement = mainRef.current;
@@ -102,7 +105,21 @@ export function WorkbenchFrame({ activeView }: WorkbenchFrameProps) {
     <div className={styles.app}>
       <SessionSidebar />
       <main className={styles.main} id="main-content" ref={mainRef} tabIndex={-1}>
-        {activeView === "chat" ? <ChatView active /> : <PipelineView active />}
+        {activeView === "chat" ? (
+          <ChatView active />
+        ) : activeView === "pipeline" ? (
+          <PipelineView active />
+        ) : (
+          <KnowledgeGraphExplorer
+            activeCollectionId={state.activeCollectionId}
+            graph={state.knowledgeGraph}
+            onOpenPipeline={() => void navigate("/pipeline")}
+            onOpenTopic={(collectionId) => {
+              actions.selectCollection(collectionId);
+              void navigate("/chat");
+            }}
+          />
+        )}
       </main>
       <PdfViewerPanel
         open={

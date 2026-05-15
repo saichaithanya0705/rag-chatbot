@@ -31,6 +31,17 @@ class TopicSummary:
     document_count: int
 
 
+@dataclass
+class TopicEdgeEvidence:
+    weight: float
+    semantic_score: float
+    page_overlap_score: float
+    document_overlap_score: float
+    shared_pages: list[str]
+    shared_documents: list[str]
+    reason: str
+
+
 GRAPH_EDGE_MIN_WEIGHT = 0.45
 GRAPH_MAX_NEIGHBORS_PER_TOPIC = 3
 
@@ -222,6 +233,9 @@ class KgManager:
                     "label": topic.display_name,
                     "chunkCount": len(topic.chunk_ids),
                     "documentCount": len(topic.pdf_sources),
+                    "keywords": list(topic.keyword_summary),
+                    "sourceDocuments": list(topic.pdf_sources),
+                    "pageKeys": list(topic.page_keys),
                 }
                 for topic in topics.values()
             ],
@@ -231,6 +245,12 @@ class KgManager:
                     "target": target,
                     "weight": float(attributes.get("weight", 0.0)),
                     "directed": bool(attributes.get("directed", True)),
+                    "semanticScore": float(attributes.get("semantic_score", 0.0)),
+                    "pageOverlapScore": float(attributes.get("page_overlap_score", 0.0)),
+                    "documentOverlapScore": float(attributes.get("document_overlap_score", 0.0)),
+                    "sharedPages": list(attributes.get("shared_pages", [])),
+                    "sharedDocuments": list(attributes.get("shared_documents", [])),
+                    "reason": str(attributes.get("reason", "Related by the knowledge graph scoring model.")),
                 }
                 for source, target, attributes in graph.edges(data=True)
             ],
@@ -431,18 +451,44 @@ class KgManager:
     def _topic_to_payload(topic: TopicNodeRecord) -> dict[str, object]:
         return asdict(topic)
 
-    def _edge_weight(self, left: TopicNodeRecord, right: TopicNodeRecord) -> float:
+    def _edge_evidence(self, left: TopicNodeRecord, right: TopicNodeRecord) -> TopicEdgeEvidence:
         centroid_similarity = max(self._cosine_similarity(left.centroid, right.centroid), 0.0)
         left_pages = set(left.page_keys)
         right_pages = set(right.page_keys)
-        shared_pages = len(left_pages & right_pages)
-        page_coverage = shared_pages / len(left_pages) if left_pages else 0.0
+        shared_pages = sorted(left_pages & right_pages)
+        page_coverage = len(shared_pages) / len(left_pages) if left_pages else 0.0
         left_documents = set(left.pdf_sources)
         right_documents = set(right.pdf_sources)
-        shared_documents = len(left_documents & right_documents)
-        document_coverage = shared_documents / len(left_documents) if left_documents else 0.0
+        shared_documents = sorted(left_documents & right_documents)
+        document_coverage = len(shared_documents) / len(left_documents) if left_documents else 0.0
 
-        return 0.45 * centroid_similarity + 0.35 * page_coverage + 0.20 * document_coverage
+        weight = 0.45 * centroid_similarity + 0.35 * page_coverage + 0.20 * document_coverage
+        reason_parts: list[str] = []
+        if centroid_similarity >= 0.82:
+            reason_parts.append("Strong semantic similarity")
+        elif centroid_similarity >= 0.62:
+            reason_parts.append("Moderate semantic similarity")
+        elif centroid_similarity > 0:
+            reason_parts.append("Weak semantic similarity")
+        if shared_pages:
+            reason_parts.append(f"{len(shared_pages)} shared page{'s' if len(shared_pages) != 1 else ''}")
+        if shared_documents:
+            reason_parts.append(
+                f"{len(shared_documents)} shared document{'s' if len(shared_documents) != 1 else ''}"
+            )
+
+        return TopicEdgeEvidence(
+            weight=weight,
+            semantic_score=centroid_similarity,
+            page_overlap_score=page_coverage,
+            document_overlap_score=document_coverage,
+            shared_pages=shared_pages,
+            shared_documents=shared_documents,
+            reason="; ".join(reason_parts) + "." if reason_parts else "Related by the knowledge graph scoring model.",
+        )
+
+    def _edge_weight(self, left: TopicNodeRecord, right: TopicNodeRecord) -> float:
+        return self._edge_evidence(left, right).weight
 
     def _build_graph_from_topics(self, topics: list[TopicNodeRecord] | object) -> nx.DiGraph:
         topic_list = list(topics)
@@ -456,12 +502,18 @@ class KgManager:
                 document_count=len(topic.pdf_sources),
             )
 
-        for source, target, weight in self._select_graph_edges(topic_list):
+        for source, target, evidence in self._select_graph_edges(topic_list):
             graph.add_edge(
                 source,
                 target,
-                weight=weight,
+                weight=evidence.weight,
                 directed=False,
+                semantic_score=evidence.semantic_score,
+                page_overlap_score=evidence.page_overlap_score,
+                document_overlap_score=evidence.document_overlap_score,
+                shared_pages=evidence.shared_pages,
+                shared_documents=evidence.shared_documents,
+                reason=evidence.reason,
             )
         return graph
 
@@ -486,37 +538,46 @@ class KgManager:
             topic.display_name = base_label if next_count == 1 else f"{base_label} ({next_count})"
         return topic_list
 
-    def _select_graph_edges(self, topics: list[TopicNodeRecord]) -> list[tuple[str, str, float]]:
+    def _select_graph_edges(self, topics: list[TopicNodeRecord]) -> list[tuple[str, str, TopicEdgeEvidence]]:
         if len(topics) < 2:
             return []
 
-        neighbor_candidates: dict[str, list[tuple[str, float]]] = {
+        neighbor_candidates: dict[str, list[tuple[str, TopicEdgeEvidence]]] = {
             topic.collection_id: []
             for topic in topics
         }
 
         for index, left in enumerate(topics):
             for right in topics[index + 1 :]:
-                forward_weight = self._edge_weight(left, right)
-                reverse_weight = self._edge_weight(right, left)
-                weight = max(forward_weight, reverse_weight)
-                if weight < GRAPH_EDGE_MIN_WEIGHT:
+                forward_evidence = self._edge_evidence(left, right)
+                reverse_evidence = self._edge_evidence(right, left)
+                evidence = (
+                    forward_evidence
+                    if forward_evidence.weight >= reverse_evidence.weight
+                    else reverse_evidence
+                )
+                if evidence.weight < GRAPH_EDGE_MIN_WEIGHT:
                     continue
-                neighbor_candidates[left.collection_id].append((right.collection_id, weight))
-                neighbor_candidates[right.collection_id].append((left.collection_id, weight))
+                neighbor_candidates[left.collection_id].append((right.collection_id, evidence))
+                neighbor_candidates[right.collection_id].append((left.collection_id, evidence))
 
-        selected_pairs: dict[tuple[str, str], float] = {}
+        selected_pairs: dict[tuple[str, str], TopicEdgeEvidence] = {}
         for source_id, candidates in neighbor_candidates.items():
-            top_neighbors = sorted(candidates, key=lambda item: item[1], reverse=True)[:GRAPH_MAX_NEIGHBORS_PER_TOPIC]
-            for target_id, weight in top_neighbors:
+            top_neighbors = sorted(candidates, key=lambda item: item[1].weight, reverse=True)[:GRAPH_MAX_NEIGHBORS_PER_TOPIC]
+            for target_id, evidence in top_neighbors:
                 pair_key = tuple(sorted((source_id, target_id)))
-                selected_pairs[pair_key] = max(weight, selected_pairs.get(pair_key, 0.0))
+                previous = selected_pairs.get(pair_key)
+                selected_pairs[pair_key] = (
+                    evidence
+                    if previous is None or evidence.weight > previous.weight
+                    else previous
+                )
 
         return [
-            (source, target, weight)
-            for (source, target), weight in sorted(
+            (source, target, evidence)
+            for (source, target), evidence in sorted(
                 selected_pairs.items(),
-                key=lambda item: (-item[1], item[0][0], item[0][1]),
+                key=lambda item: (-item[1].weight, item[0][0], item[0][1]),
             )
         ]
 

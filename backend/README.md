@@ -8,14 +8,23 @@ Backend for the local RAG chatbot. PDF ingestion uses IBM Docling for document p
 cd D:\projects\chat\backend
 python -m venv .venv
 .venv\Scripts\python -m pip install --upgrade pip
-.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -m pip install -r requirements-dev.txt
 ```
+
+`requirements-dev.txt` includes the pinned runtime requirements from `requirements.txt` plus the test runner.
 
 ## Run the API
 
 ```powershell
 cd D:\projects\chat\backend
 .venv\Scripts\python -m uvicorn app.main:app --reload
+```
+
+## Run tests
+
+```powershell
+cd D:\projects\chat\backend
+.venv\Scripts\python -m pytest
 ```
 
 ## Ingest a PDF

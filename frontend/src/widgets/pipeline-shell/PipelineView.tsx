@@ -6,7 +6,7 @@ import { cn } from "@/shared/lib/cn";
 import { SectionLabel } from "@/shared/ui/section-label/SectionLabel";
 import { StatusPill } from "@/shared/ui/status-pill/StatusPill";
 import { SurfaceCard } from "@/shared/ui/surface-card/SurfaceCard";
-import { KnowledgeGraphView } from "@/widgets/pipeline-shell/KnowledgeGraphView";
+import { buildKnowledgeGraphSummary } from "@/widgets/knowledge-graph-explorer/knowledgeGraphModel";
 import baseStyles from "@/widgets/workbench-frame/workbench-frame.module.css";
 import localStyles from "./pipeline-view.module.css";
 
@@ -152,6 +152,11 @@ export function PipelineView({ active }: PipelineViewProps) {
       : state.pipelineDocuments.filter((document) =>
           document.topicCollectionIds.includes(activeCollectionId),
         );
+  const graphSummary = buildKnowledgeGraphSummary(state.knowledgeGraph);
+  const strongestGraphEdges = [...state.knowledgeGraph.edges]
+    .sort((left, right) => right.weight - left.weight)
+    .slice(0, 3);
+  const graphNodeById = new Map(state.knowledgeGraph.nodes.map((node) => [node.id, node]));
 
   useEffect(() => {
     if (!deletingFileId) {
@@ -527,15 +532,47 @@ export function PipelineView({ active }: PipelineViewProps) {
         </AccordionSection>
 
         <AccordionSection title="Knowledge Graph">
-          <SurfaceCard className={styles.graphSurface}>
-            <KnowledgeGraphView
-              activeCollectionId={activeCollectionId}
-              graph={state.knowledgeGraph}
-              onSelectNode={(collectionId) => {
-                actions.selectCollection(collectionId);
-                void navigate("/chat");
-              }}
-            />
+          <SurfaceCard className={styles.graphPreviewSurface}>
+            <div className={styles.graphPreviewHeader}>
+              <div>
+                <div className={styles.graphPreviewTitle}>Topic relationship map</div>
+                <div className={styles.graphPreviewText}>
+                  {graphSummary.topicCount === 0
+                    ? "Re-cluster indexed PDFs to build a topic map."
+                    : `${graphSummary.topicCount} topics · ${graphSummary.relationshipCount} relationships · ${graphSummary.chunkCount} chunks`}
+                </div>
+              </div>
+              <button
+                className={styles.graphPreviewAction}
+                onClick={() => void navigate("/knowledge-graph")}
+                type="button"
+              >
+                Open graph
+              </button>
+            </div>
+            {strongestGraphEdges.length > 0 ? (
+              <div className={styles.graphPreviewLinks}>
+                {strongestGraphEdges.map((edge) => {
+                  const source = graphNodeById.get(edge.source);
+                  const target = graphNodeById.get(edge.target);
+                  return (
+                    <button
+                      className={styles.graphPreviewLink}
+                      key={`${edge.source}-${edge.target}`}
+                      onClick={() => void navigate(`/knowledge-graph?edge=${[edge.source, edge.target].sort().join("::")}`)}
+                      type="button"
+                    >
+                      <span>{source?.label ?? edge.source}</span>
+                      <svg aria-hidden="true" fill="none" height="12" viewBox="0 0 16 12" width="16">
+                        <path d="M2 6H14M10 2L14 6L10 10" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" />
+                      </svg>
+                      <span>{target?.label ?? edge.target}</span>
+                      <strong>{Math.round(edge.weight * 100)}%</strong>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
           </SurfaceCard>
         </AccordionSection>
       </div>

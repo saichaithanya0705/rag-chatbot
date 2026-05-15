@@ -192,6 +192,9 @@ class GraphNodePayload(BaseModel):
     label: str
     chunk_count: int = Field(alias="chunkCount")
     document_count: int = Field(alias="documentCount")
+    keywords: list[str] = Field(default_factory=list)
+    source_documents: list[str] = Field(default_factory=list, alias="sourceDocuments")
+    page_keys: list[str] = Field(default_factory=list, alias="pageKeys")
 
     model_config = {
         "populate_by_name": True,
@@ -203,6 +206,16 @@ class GraphEdgePayload(BaseModel):
     target: str
     weight: float
     directed: bool = True
+    semantic_score: float = Field(default=0.0, alias="semanticScore")
+    page_overlap_score: float = Field(default=0.0, alias="pageOverlapScore")
+    document_overlap_score: float = Field(default=0.0, alias="documentOverlapScore")
+    shared_pages: list[str] = Field(default_factory=list, alias="sharedPages")
+    shared_documents: list[str] = Field(default_factory=list, alias="sharedDocuments")
+    reason: str = "Related by the knowledge graph scoring model."
+
+    model_config = {
+        "populate_by_name": True,
+    }
 
 
 class GraphResponse(BaseModel):

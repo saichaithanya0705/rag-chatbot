@@ -46,6 +46,9 @@ interface GraphNodeApiResponse {
   label: string;
   chunkCount: number;
   documentCount: number;
+  keywords?: string[];
+  sourceDocuments?: string[];
+  pageKeys?: string[];
 }
 
 interface GraphEdgeApiResponse {
@@ -53,6 +56,12 @@ interface GraphEdgeApiResponse {
   target: string;
   weight: number;
   directed?: boolean;
+  semanticScore?: number;
+  pageOverlapScore?: number;
+  documentOverlapScore?: number;
+  sharedPages?: string[];
+  sharedDocuments?: string[];
+  reason?: string;
 }
 
 interface GraphApiResponse {
@@ -416,12 +425,21 @@ function mapKnowledgeGraph(graph: GraphApiResponse): KnowledgeGraph {
       label: node.label,
       chunkCount: node.chunkCount,
       documentCount: node.documentCount,
+      keywords: node.keywords ?? [],
+      sourceDocuments: node.sourceDocuments ?? [],
+      pageKeys: node.pageKeys ?? [],
     })),
     edges: graph.edges.map((edge) => ({
       source: edge.source,
       target: edge.target,
       weight: edge.weight,
       directed: edge.directed ?? true,
+      semanticScore: edge.semanticScore,
+      pageOverlapScore: edge.pageOverlapScore,
+      documentOverlapScore: edge.documentOverlapScore,
+      sharedPages: edge.sharedPages ?? [],
+      sharedDocuments: edge.sharedDocuments ?? [],
+      reason: edge.reason,
     })),
   };
 }

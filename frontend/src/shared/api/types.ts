@@ -83,6 +83,9 @@ export interface KnowledgeGraphNode {
   label: string;
   chunkCount: number;
   documentCount: number;
+  keywords: string[];
+  sourceDocuments: string[];
+  pageKeys: string[];
 }
 
 export interface KnowledgeGraphEdge {
@@ -90,6 +93,12 @@ export interface KnowledgeGraphEdge {
   target: string;
   weight: number;
   directed?: boolean;
+  semanticScore?: number;
+  pageOverlapScore?: number;
+  documentOverlapScore?: number;
+  sharedPages?: string[];
+  sharedDocuments?: string[];
+  reason?: string;
 }
 
 export interface KnowledgeGraph {
