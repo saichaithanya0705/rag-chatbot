@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from app.services.docling_parser import ParsedBlock, ParsedDocument, ParsedPage
+from app.services.document_parser import ParsedBlock, ParsedDocument, ParsedPage
 from app.services.ingestion_service import IngestionService
 
 
