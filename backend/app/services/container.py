@@ -6,6 +6,7 @@ from app.core.chroma_store import ChromaStore
 from app.core.config import Settings
 from app.core.database import Database
 from app.services.docling_parser import DoclingDocumentParser
+from app.services.document_preview_service import DocumentPreviewService
 from app.services.document_service import DocumentService
 from app.services.history_service import HistoryService
 from app.services.ingestion_dispatcher import IngestionDispatcher
@@ -29,6 +30,7 @@ class ServiceContainer:
     ollama_client: OllamaClient
     keyword_service: KeywordService
     document_service: DocumentService
+    document_preview_service: DocumentPreviewService
     history_service: HistoryService
     kg_manager: KgManager
     topic_index_service: TopicIndexService
@@ -57,6 +59,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         chat_model=settings.chat_model,
     )
     document_service = DocumentService(database=database, chroma_store=chroma_store)
+    document_preview_service = DocumentPreviewService(document_service)
     history_service = HistoryService(
         database=database,
         chroma_store=chroma_store,
@@ -120,6 +123,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         ollama_client=ollama_client,
         keyword_service=keyword_service,
         document_service=document_service,
+        document_preview_service=document_preview_service,
         history_service=history_service,
         kg_manager=kg_manager,
         topic_index_service=topic_index_service,

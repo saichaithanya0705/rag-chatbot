@@ -205,7 +205,7 @@ def get_preview(
     user_id: str = Depends(get_user_id),
 ) -> PreviewResponse:
     try:
-        html_content, total_pages = container.document_service.render_preview_html(
+        html_content, total_pages = container.document_preview_service.render_preview_html(
             pdf_name=pdf_name,
             page_number=page,
             chunk_index=chunk_index,
