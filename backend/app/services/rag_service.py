@@ -24,42 +24,29 @@ from app.services.rag_answer_text import (
     THREE_SENTENCE_PATTERN,
     TWO_SENTENCE_PATTERN,
     WEB_CITATION_PATTERN,
-    best_context_for_segment,
     best_page_context,
-    claim_window,
     clean_model_thinking_summary,
-    clean_qa_answer_text,
     derive_citations_from_answer,
     extract_direct_qa_pair,
     has_uncited_substantive_segments,
     normalize_answer_text,
-    normalize_question_for_matching,
     question_match_score,
     references_unknown_sources,
     shape_shortcut_answer,
     strip_citation_markers,
     strip_thinking_blocks,
-    substantive_segments,
     tokenize,
 )
 from app.services.rag_comparison import (
-    comparison_match_tokens,
     comparison_question_score,
     comparison_search_query,
     comparison_subqueries,
-    comparison_token_variants,
 )
 from app.services.rag_citations import (
     citation_from_context,
     docling_source_metadata_from_metadata,
-    json_dict_list,
-    json_list,
-    json_string_list,
-    metadata_bool,
-    optional_metadata_text,
     pdf_context_from_chunk,
     retrieved_chunk_from_candidate,
-    source_location_label,
 )
 from app.services.rag_grounding import (
     CONTEXT_FALLBACK_CHAR_LIMIT,
@@ -73,10 +60,7 @@ from app.services.rag_grounding import (
 )
 from app.services.rag_prompting import (
     build_prompt,
-    focus_context_text,
-    render_context_for_prompt,
     select_contexts,
-    trim_text_window,
 )
 from app.services.rag_types import (
     CandidateChunk,
@@ -397,7 +381,7 @@ class RagService:
                 system_prompt="You answer plainly.",
                 contexts=[shortcut_context],
                 shortcut_answer=shortcut_answer,
-                shortcut_citations=[self._citation_from_context(shortcut_context)],
+                shortcut_citations=[citation_from_context(shortcut_context)],
                 cross_session_turn_count=cross_session_turn_count,
                 reasoning_segments=intent_reasoning_segments,
             )
@@ -424,7 +408,7 @@ class RagService:
                     cross_session_turn_count=cross_session_turn_count,
                     reasoning_segments=intent_reasoning_segments,
                 )
-            prompt = self._build_prompt(
+            prompt = build_prompt(
                 question=question,
                 contexts=comparison_contexts,
                 history_messages=history_messages or [],
@@ -474,7 +458,7 @@ class RagService:
                         user_id=user_id,
                     )
 
-        pdf_contexts = [self._pdf_context_from_chunk(chunk) for chunk in retrieval.chunks]
+        pdf_contexts = [pdf_context_from_chunk(chunk) for chunk in retrieval.chunks]
         tool_call = (
             ToolCallPayload(label="Searched the web for", query=retrieval_query)
             if web_search_enabled
@@ -534,7 +518,7 @@ class RagService:
                 reasoning_segments=intent_reasoning_segments,
             )
 
-        prompt = self._build_prompt(
+        prompt = build_prompt(
             question=question,
             contexts=contexts,
             history_messages=history_messages or [],
@@ -557,17 +541,17 @@ class RagService:
         raw_answer: str,
         contexts: list[RetrievedContext],
     ) -> tuple[str, list[CitationPayload]]:
-        normalized_answer = self._strip_thinking_blocks(raw_answer.strip())
-        clean_answer = self._normalize_answer_text(
-            self._strip_citation_markers(normalized_answer).strip()
+        normalized_answer = strip_thinking_blocks(raw_answer.strip())
+        clean_answer = normalize_answer_text(
+            strip_citation_markers(normalized_answer).strip()
         )
         citations = self._extract_citations(normalized_answer, contexts)
         if not citations and contexts and clean_answer:
-            citations = self._derive_citations_from_answer(clean_answer, contexts)
+            citations = derive_citations_from_answer(clean_answer, contexts)
         if contexts and (
             not citations
-            or self._references_unknown_sources(normalized_answer, contexts)
-            or self._has_uncited_substantive_segments(normalized_answer, contexts)
+            or references_unknown_sources(normalized_answer, contexts)
+            or has_uncited_substantive_segments(normalized_answer, contexts)
         ):
             return ungrounded_answer_message(), []
         return clean_answer, citations
@@ -625,7 +609,7 @@ class RagService:
         contexts: list[RetrievedContext],
     ) -> str | None:
         cleaned_segments = [
-            self._trim_text(re.sub(r"\s+", " ", segment).strip(), MODEL_THINKING_SEGMENT_CHAR_LIMIT)
+            trim_text(re.sub(r"\s+", " ", segment).strip(), MODEL_THINKING_SEGMENT_CHAR_LIMIT)
             for segment in reasoning_segments
             if segment and segment.strip()
         ]
@@ -669,7 +653,7 @@ class RagService:
             LOGGER.warning("Model thinking summarization failed.", exc_info=True)
             return None
 
-        return self._clean_model_thinking_summary(summary.response)
+        return clean_model_thinking_summary(summary.response)
 
     def generation_options_for(self, prepared: PreparedAnswer) -> dict[str, float | int]:
         return self._interactive_generation_options(
@@ -769,7 +753,7 @@ class RagService:
 
         return RetrievalResult(
             chunks=[
-                self._retrieved_chunk_from_candidate(candidate)
+                retrieved_chunk_from_candidate(candidate)
                 for candidate in selected_chunks
             ],
             top_rerank_score=selected_chunks[0].rerank_score if selected_chunks else None,
@@ -846,7 +830,7 @@ class RagService:
 
         return RetrievalResult(
             chunks=[
-                self._retrieved_chunk_from_candidate(candidate)
+                retrieved_chunk_from_candidate(candidate)
                 for candidate in selected_chunks
             ],
             top_rerank_score=selected_chunks[0].rerank_score if selected_chunks else None,
@@ -930,7 +914,7 @@ class RagService:
                 page_number=row.page_number,
                 chunk_index=row.chunk_index,
                 text=row.text,
-                **self._docling_source_metadata_from_metadata(
+                **docling_source_metadata_from_metadata(
                     metadata_by_chunk_id.get(row.chunk_id, {})
                 ),
             )
@@ -966,7 +950,7 @@ class RagService:
         collection_names: Sequence[str],
         user_id: str,
     ) -> None:
-        subqueries = self._comparison_subqueries(question)
+        subqueries = comparison_subqueries(question)
         if not subqueries:
             return
 
@@ -1063,7 +1047,7 @@ class RagService:
     ) -> int:
         if not ordered_candidates:
             return 0
-        if self._comparison_subqueries(question):
+        if comparison_subqueries(question):
             return min(len(ordered_candidates), max(self._top_k * 2, MAX_INTERACTIVE_RERANK_CANDIDATES))
         return min(
             len(ordered_candidates),
@@ -1078,7 +1062,7 @@ class RagService:
     ) -> bool:
         if len(ordered_candidates) <= 1:
             return False
-        if self._comparison_subqueries(question):
+        if comparison_subqueries(question):
             return True
 
         top_window = list(ordered_candidates[: max(self._top_k, 4)])
@@ -1141,7 +1125,7 @@ class RagService:
         collection_names: Sequence[str],
         user_id: str,
     ) -> list[set[str]]:
-        subqueries = self._comparison_subqueries(question)
+        subqueries = comparison_subqueries(question)
         if not subqueries:
             return []
 
@@ -1163,12 +1147,6 @@ class RagService:
                 groups.append(hit_ids)
         return groups
 
-    _comparison_subqueries = staticmethod(comparison_subqueries)
-    _comparison_search_query = staticmethod(comparison_search_query)
-    _comparison_question_score = staticmethod(comparison_question_score)
-    _comparison_match_tokens = staticmethod(comparison_match_tokens)
-    _comparison_token_variants = staticmethod(comparison_token_variants)
-
     def _comparison_contexts(
         self,
         question: str,
@@ -1176,7 +1154,7 @@ class RagService:
         collection_id: str,
         user_id: str,
     ) -> list[RetrievedContext]:
-        subqueries = self._comparison_subqueries(question)
+        subqueries = comparison_subqueries(question)
         if len(subqueries) < 2:
             return []
 
@@ -1185,7 +1163,7 @@ class RagService:
         seen_ids: set[str] = set()
         comparison_limit = max(self._top_k * 4, 10)
         for subquery in subqueries:
-            search_query = self._comparison_search_query(subquery)
+            search_query = comparison_search_query(subquery)
             lookup_query = (
                 search_query
                 if search_query.lower().startswith("what ")
@@ -1214,7 +1192,7 @@ class RagService:
             question_matched_pool = [
                 candidate
                 for candidate in candidates
-                if self._comparison_question_score(subquery, candidate) > 0
+                if comparison_question_score(subquery, candidate) > 0
             ] or candidates
             preferred_pool = [
                 candidate
@@ -1229,7 +1207,7 @@ class RagService:
             best_index = max(
                 range(len(preferred_pool)),
                 key=lambda index: (
-                    self._comparison_question_score(subquery, preferred_pool[index]),
+                    comparison_question_score(subquery, preferred_pool[index]),
                     1 if self._candidate_has_standalone_answer(preferred_pool[index]) else 0,
                     rerank_scores[index] if index < len(rerank_scores) else float("-inf"),
                 ),
@@ -1239,7 +1217,7 @@ class RagService:
                 continue
             seen_ids.add(preferred_candidate.chunk_id)
             contexts.append(
-                self._pdf_context_from_chunk(self._retrieved_chunk_from_candidate(preferred_candidate))
+                pdf_context_from_chunk(retrieved_chunk_from_candidate(preferred_candidate))
             )
 
         return contexts
@@ -1261,7 +1239,7 @@ class RagService:
             if index == 1:
                 sentence = f"In contrast, {sentence[0].lower()}{sentence[1:]}" if len(sentence) > 1 else f"In contrast, {sentence.lower()}"
             comparison_sentences.append(sentence)
-            citations.append(self._citation_from_context(context))
+            citations.append(citation_from_context(context))
 
         answer = " ".join(comparison_sentences).strip()
         if not answer:
@@ -1281,7 +1259,7 @@ class RagService:
         return sentence
 
     def _comparison_sentence_for_context(self, context: RetrievedContext) -> str:
-        qa_pair = self._extract_direct_qa_pair(context.text)
+        qa_pair = extract_direct_qa_pair(context.text)
         if qa_pair is not None:
             candidate = self._first_sentence(qa_pair[1])
             if self._is_informative_answer_sentence(candidate):
@@ -1302,7 +1280,7 @@ class RagService:
         return ""
 
     def _candidate_has_standalone_answer(self, candidate: CandidateChunk) -> bool:
-        qa_pair = self._extract_direct_qa_pair(candidate.text)
+        qa_pair = extract_direct_qa_pair(candidate.text)
         if qa_pair is None:
             return False
         answer_sentence = self._first_sentence(qa_pair[1])
@@ -1354,7 +1332,7 @@ class RagService:
                     chunk_index=int(metadata["chunk_index"]),
                     text=str(text),
                     fused_score=self._rrf_score(rank),
-                    **self._docling_source_metadata_from_metadata(dict(metadata or {})),
+                    **docling_source_metadata_from_metadata(dict(metadata or {})),
                 )
             )
         return candidates
@@ -1393,13 +1371,11 @@ class RagService:
 
         return RetrievalResult(
             chunks=[
-                self._retrieved_chunk_from_candidate(candidate)
+                retrieved_chunk_from_candidate(candidate)
                 for candidate in reranked
             ],
             top_rerank_score=reranked[0].rerank_score if reranked else None,
         )
-
-    _build_prompt = staticmethod(build_prompt)
 
     def _direct_context_shortcut(
         self,
@@ -1412,11 +1388,11 @@ class RagService:
         for context in contexts:
             if context.kind != "pdf":
                 continue
-            qa_pair = self._extract_direct_qa_pair(context.text)
+            qa_pair = extract_direct_qa_pair(context.text)
             if qa_pair is None:
                 continue
             qa_question, qa_answer = qa_pair
-            question_score = self._question_match_score(question, qa_question)
+            question_score = question_match_score(question, qa_question)
             if question_score < DIRECT_QA_MATCH_THRESHOLD:
                 continue
             cleaned_answer = clean_context_snippet(
@@ -1425,7 +1401,7 @@ class RagService:
             )
             if not cleaned_answer:
                 continue
-            cleaned_answer = self._shape_shortcut_answer(question, cleaned_answer)
+            cleaned_answer = shape_shortcut_answer(question, cleaned_answer)
             first_sentence = self._first_sentence(cleaned_answer)
             candidate_rank = (
                 1 if self._is_informative_answer_sentence(first_sentence) else 0,
@@ -1441,7 +1417,7 @@ class RagService:
             return None
         return FinalizedAnswer(
             answer=best_answer,
-            citations=[self._citation_from_context(best_context)],
+            citations=[citation_from_context(best_context)],
         )
 
     def _direct_lexical_shortcut(
@@ -1452,7 +1428,7 @@ class RagService:
         user_id: str,
     ) -> tuple[RetrievedContext, str] | None:
         lexical_contexts = [
-            self._pdf_context_from_chunk(self._retrieved_chunk_from_candidate(candidate))
+            pdf_context_from_chunk(retrieved_chunk_from_candidate(candidate))
             for candidate in self._lexical_candidates_for_collection(
                 question,
                 self._collection_name if collection_id == "all-pdfs" else collection_id,
@@ -1462,11 +1438,11 @@ class RagService:
         ]
         best_match: tuple[tuple[int, float, int], RetrievedContext, str] | None = None
         for context in lexical_contexts:
-            qa_pair = self._extract_direct_qa_pair(context.text)
+            qa_pair = extract_direct_qa_pair(context.text)
             if qa_pair is None:
                 continue
             qa_question, qa_answer = qa_pair
-            question_score = self._question_match_score(question, qa_question)
+            question_score = question_match_score(question, qa_question)
             if question_score < DIRECT_QA_MATCH_THRESHOLD:
                 continue
             cleaned_answer = clean_context_snippet(
@@ -1475,7 +1451,7 @@ class RagService:
             )
             if not cleaned_answer:
                 continue
-            cleaned_answer = self._shape_shortcut_answer(question, cleaned_answer)
+            cleaned_answer = shape_shortcut_answer(question, cleaned_answer)
             first_sentence = self._first_sentence(cleaned_answer)
             candidate_rank = (
                 1 if self._is_informative_answer_sentence(first_sentence) else 0,
@@ -1489,12 +1465,6 @@ class RagService:
         _rank, best_context, best_answer = best_match
         return best_context, best_answer
 
-    _extract_direct_qa_pair = staticmethod(extract_direct_qa_pair)
-    _clean_qa_answer_text = staticmethod(clean_qa_answer_text)
-    _question_match_score = staticmethod(question_match_score)
-    _normalize_question_for_matching = staticmethod(normalize_question_for_matching)
-    _shape_shortcut_answer = staticmethod(shape_shortcut_answer)
-
     def _fallback_finalized_answer(
         self,
         contexts: list[RetrievedContext],
@@ -1504,12 +1474,12 @@ class RagService:
         fallback_answer = compose_fallback_answer(
             contexts,
             generation_warning=generation_warning,
-            extract_direct_qa_pair=self._extract_direct_qa_pair,
+            extract_direct_qa_pair=extract_direct_qa_pair,
         )
         return FinalizedAnswer(
             answer=fallback_answer.answer,
             citations=[
-                self._citation_from_context(context)
+                citation_from_context(context)
                 for context in fallback_answer.citation_contexts
             ],
             generation_warning=fallback_answer.generation_warning,
@@ -1548,15 +1518,6 @@ class RagService:
             "num_predict": num_predict,
         }
 
-    _render_context_for_prompt = staticmethod(render_context_for_prompt)
-    _focus_context_text = staticmethod(focus_context_text)
-
-    @staticmethod
-    def _trim_text(text: str, max_chars: int) -> str:
-        return trim_text(text, max_chars)
-
-    _trim_text_window = staticmethod(trim_text_window)
-
     def _extract_citations(
         self,
         answer: str,
@@ -1586,7 +1547,7 @@ class RagService:
             context = pdf_id_lookup.get(match.group("id").strip())
             if context is None:
                 continue
-            by_key[context.id] = self._citation_from_context(context)
+            by_key[context.id] = citation_from_context(context)
 
         for match in LEGACY_PDF_CITATION_PATTERN.finditer(answer):
             pdf_name = match.group("pdf").strip()
@@ -1600,17 +1561,17 @@ class RagService:
             )
             if context is None:
                 page_contexts = pdf_page_lookup.get((pdf_name, page_number), [])
-                context = self._best_page_context(answer, match.start(), page_contexts)
+                context = best_page_context(answer, match.start(), page_contexts)
             if context is None:
                 continue
-            by_key[context.id] = self._citation_from_context(context)
+            by_key[context.id] = citation_from_context(context)
 
         for match in WEB_CITATION_PATTERN.finditer(answer):
             url = match.group("url").strip()
             context = web_lookup.get(url)
             if context is None:
                 continue
-            by_key[context.id] = self._citation_from_context(context)
+            by_key[context.id] = citation_from_context(context)
 
         return list(by_key.values())
 
@@ -1634,16 +1595,6 @@ class RagService:
     @staticmethod
     def _rrf_score(rank: int) -> float:
         return 1.0 / (RRF_K + rank + 1)
-
-    _retrieved_chunk_from_candidate = staticmethod(retrieved_chunk_from_candidate)
-    _pdf_context_from_chunk = staticmethod(pdf_context_from_chunk)
-    _docling_source_metadata_from_metadata = staticmethod(docling_source_metadata_from_metadata)
-    _optional_metadata_text = staticmethod(optional_metadata_text)
-    _json_string_list = staticmethod(json_string_list)
-    _json_dict_list = staticmethod(json_dict_list)
-    _json_list = staticmethod(json_list)
-    _metadata_bool = staticmethod(metadata_bool)
-    _source_location_label = staticmethod(source_location_label)
 
     def _select_contexts(
         self,
@@ -1757,51 +1708,6 @@ class RagService:
         if web_count:
             parts.append(f"{web_count} web result{'s' if web_count != 1 else ''}")
         return ", ".join(parts)
-
-    _clean_model_thinking_summary = staticmethod(clean_model_thinking_summary)
-    _strip_thinking_blocks = staticmethod(strip_thinking_blocks)
-    _strip_citation_markers = staticmethod(strip_citation_markers)
-    _normalize_answer_text = staticmethod(normalize_answer_text)
-    _best_page_context = staticmethod(best_page_context)
-    _claim_window = staticmethod(claim_window)
-    _substantive_segments = staticmethod(substantive_segments)
-    _has_uncited_substantive_segments = staticmethod(has_uncited_substantive_segments)
-    _references_unknown_sources = staticmethod(references_unknown_sources)
-    _derive_citations_from_answer = staticmethod(derive_citations_from_answer)
-    _best_context_for_segment = staticmethod(best_context_for_segment)
-
-    @staticmethod
-    def _citation_from_context(context: RetrievedContext) -> CitationPayload:
-        if context.kind == "web":
-            return CitationPayload(
-                id=context.id,
-                kind="web",
-                pdf_name=None,
-                page=None,
-                chunk_index=None,
-                excerpt=context.excerpt,
-                title=context.title,
-                url=context.url,
-            )
-
-        return CitationPayload(
-            id=context.id,
-            kind="pdf",
-            document_id=context.document_id,
-            pdf_name=context.pdf_name,
-            page=context.page_number,
-            chunk_index=context.chunk_index,
-            excerpt=context.excerpt,
-            parser=context.parser,
-            source_text=context.source_text,
-            source_labels=list(context.source_labels),
-            source_refs=list(context.source_refs),
-            source_blocks=list(context.source_blocks),
-            source_location=context.source_location,
-            has_table=context.has_table,
-            title=context.title,
-            url=context.url,
-        )
 
     def _where_filter(self, collection_id: str, *, user_id: str) -> dict[str, object]:
         if collection_id == self._collection_name:

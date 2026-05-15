@@ -5,7 +5,10 @@ import unittest
 
 from app.services.answer_trace import build_answer_trace
 from app.services.ollama_client import OllamaGenerationResult
-from app.services.rag_service import RagService, RetrievedChunk, RetrievedContext
+from app.services.rag_answer_text import clean_model_thinking_summary
+from app.services.rag_citations import citation_from_context, pdf_context_from_chunk
+from app.services.rag_service import RagService
+from app.services.rag_types import RetrievedChunk, RetrievedContext
 
 
 class _ExplodingDocumentService:
@@ -161,7 +164,7 @@ class ChatIntentAndReasoningTests(unittest.TestCase):
         self.assertNotIn("Internal prompt", answer)
 
     def test_docling_source_metadata_flows_into_pdf_citation(self) -> None:
-        context = _service()._pdf_context_from_chunk(
+        context = pdf_context_from_chunk(
             RetrievedChunk(
                 chunk_id="doc-1:1:0",
                 collection_id="all_chunks",
@@ -186,7 +189,7 @@ class ChatIntentAndReasoningTests(unittest.TestCase):
             )
         )
 
-        citation = RagService._citation_from_context(context).model_dump(by_alias=True)
+        citation = citation_from_context(context).model_dump(by_alias=True)
 
         self.assertEqual(citation["parser"], "docling")
         self.assertEqual(citation["sourceLabels"], ["section_header", "table"])
@@ -258,7 +261,7 @@ class ChatIntentAndReasoningTests(unittest.TestCase):
         )
 
     def test_model_thinking_summary_filters_prompt_leakage(self) -> None:
-        cleaned = RagService._clean_model_thinking_summary(
+        cleaned = clean_model_thinking_summary(
             "Reasoning summary\n\n"
             "- Classified the message as a PDF question.\n"
             "- Internal prompt text: Use only the supplied evidence blocks.\n"
