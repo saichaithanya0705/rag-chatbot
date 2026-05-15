@@ -1,46 +1,56 @@
 **Verdict**
-Score: 34/100, Low slop risk in the audited changed scope
-Confidence: Medium
+Score: 29/100, Low slop risk
+Confidence: Medium-high
+
+**Can this honestly be <5/100?**
+No. I reduced confirmed slop-like risk in this pass, but a sub-5 score would be dishonest while the repo still has verified architecture pressure in document persistence, ingestion/topic cross-store consistency, and large frontend orchestration components. The fresh graph-only triage was already `19/100`; the source-augmented scanner reported `64/100`, but that higher number includes docs, mockups, package-lock entries, ignored temp/vendor material, and audit-report text. Final scoring below is source-verified, not vibe-based.
 
 **Scope**
 - Repository root: `D:/projects/chat`
 - Branch audited: `main`
 - Audit date: 2026-05-15
-- Scope followed for this pass: merged work plus directly connected RAG, citation, knowledge-graph, and workbench architecture. Broader repository findings are treated as triage unless source evidence touched the changed architecture.
-- Graphify output exists and was read before source inspection. Final Graphify regeneration completed after the cleanup: `986 nodes`, `1862 edges`, `30 communities`.
+- Graphify was read before source inspection, then regenerated after fixes.
+- Sub-agents were used as bounded read-only verifiers for RAG, backend god nodes, frontend architecture, and repo hygiene. Their findings are integrated here.
 
 **Why**
-- Graphify still reports `RagService` as the top god node with `70 edges` and `26 inferred relationships`, so RAG remains the main architecture pressure point.
-- Source inspection confirmed one slop-like residual from the refactor: extracted helper modules were still re-exposed through `RagService` private static methods, keeping a facade-like boundary in place.
-- The confirmed facade residue was fixed by calling helper modules directly and moving tests to the helper module APIs.
-- The frontend workbench and knowledge graph changes show healthier extraction patterns: state helpers, action helpers, graph model helpers, and focused tests now sit outside large UI shells.
-- The bundled source-augmented scan produced a high triage score, but the high-risk examples were materially noisy: docs, mockups, ignored `tmp` contents, package lock files, and terminology false positives such as `prompt` fields.
+- `RagService` was a confirmed god-object risk before this pass: it owned answer orchestration plus retrieval, comparison retrieval, web reranking, and local context checks.
+- That RAG risk was reduced permanently by introducing `RagRetrievalEngine` as a real retrieval/search boundary and adding direct retrieval tests.
+- Two tracked one-off rewrite scripts, `patchTSX.js` and `splitCSS.js`, were stale refactor residue and were removed.
+- Larger confirmed risks remain outside this pass: `DocumentService` spans persistence/vector/preview concerns, ingestion and topic indexing mutate several stores without one durable unit-of-work, and frontend workbench/KG explorer components still aggregate multiple domains.
+- Security scans found no tracked secret and `npm audit --omit=dev --audit-level=moderate` reports `0 vulnerabilities`; the PDF HTML path remains governed but security-sensitive.
 
 **Evidence**
 | Signal | Graph Evidence | Source Evidence | Classification | Impact |
 |---|---|---|---|---|
-| RAG orchestration centrality | `RagService` remains the top god node: `70 edges`; Graphify asks why it bridges seven communities and has `26` inferred edges. | `backend/app/services/rag_service.py` coordinates retrieval, web search, reranking, answer generation, citations, and fallback behavior. | Aggressive review target, partially remediated | Centrality is still real, but now reflects orchestration dependencies rather than helper re-export wrappers. |
-| Helper extraction facade residue | Graphify separates answer text, citations, prompting, comparison, and grounding communities, while `RagService` stayed highly connected. | Pre-fix source had private static aliases for `build_prompt`, `pdf_context_from_chunk`, `citation_from_context`, comparison helpers, answer-cleaning helpers, and metadata helpers. | Confirmed slop signal, fixed | Removed dead indirection that made extracted modules look subordinate to `RagService`. |
-| Citation and answer helpers | Final graph shows dedicated helper clusters for citation conversion and answer text validation. | `backend/app/services/rag_citations.py`, `rag_answer_text.py`, `rag_prompting.py`, `rag_grounding.py`, and `rag_comparison.py` have focused tests. | Healthy architecture signal | Behavior now has explicit module ownership and direct tests. |
-| Workbench state extraction | Graphify community includes `createInitialWorkbenchState`, `useStableWorkbenchActions`, and `WorkbenchProvider`. | `frontend/src/app/providers/workbench/workbenchStateHelpers.ts`, `workbenchActions.ts`, and tests isolate provider state mechanics. | Healthy architecture signal | The provider remains a shell, but complex state rules are no longer buried in the component. |
-| HTML rendering sink | Scan flagged HTML sinks. | `DocumentService.render_preview_html` escapes source text before injecting highlight spans; frontend markdown tests assert raw HTML is escaped. | Benign but governed | Keep this as a security-sensitive review target when preview rendering changes. |
-| Source-augmented scan noise | Scan reported `64/100` high source triage risk. | Examples included docs, mockups, ignored `tmp` material, package-lock ranges, and false positives like data fields named `prompt`. | Triage noise | Useful for finding targets, not valid as final verdict without source verification. |
+| RAG god-object split | Fresh Graphify: `RagService` 71 edges, `RagRetrievalEngine` 43 edges; betweenness for `RagService` now reflects coordination plus model/generation dependencies. | `backend/app/services/rag_service.py` is now 854 lines; retrieval/search/rerank behavior moved to `backend/app/services/rag_retrieval.py`; `backend/tests/test_rag_retrieval.py` covers direct lexical shortcut and scoped collection retrieval. | Confirmed slop signal, fixed in this pass | RAG retrieval no longer lives inside the answer-generation service. |
+| RAG helper boundary | Helper communities still exist for answer text, citations, grounding, comparison, and prompting. | `backend/app/services/rag_answer_text.py` now owns `first_sentence`, `is_informative_answer_sentence`, and `comparison_sentence_for_context`; `RagService` consumes helpers directly. | Healthy architecture signal | Prevents helper logic from drifting back into service-private methods. |
+| Multi-store document service | Graphify still reports `DocumentService` as a god node with 42 edges. | `backend/app/services/document_service.py` owns DB records, Chroma chunks, FTS catalog sync, corpus versioning, and preview HTML rendering. | Confirmed architecture risk | Needs repository/storage boundary split before whole-repo score can be minimal. |
+| Ingestion cross-store lifecycle | `IngestionService` remains a top connected node. | Ingestion writes Chroma chunks, retrieval catalog records, pages, topic metadata, and document status through separate operations, with broad cleanup on failure. | Confirmed architecture risk | Partial external state can exist unless the lifecycle is made durable and reconciliable. |
+| Topic/KG consistency | `TopicIndexService`, `KgManager`, and `ChromaStore` remain connected through inferred and source-confirmed relationships. | Topic indexing mutates Chroma metadata, SQLite catalog state, and KG JSON without one transaction boundary. | Confirmed consistency risk | Topic state can diverge across stores after partial failure. |
+| Frontend workbench provider | Graphify community 16 still centers on `WorkbenchProvider`. | `frontend/src/app/providers/workbench/WorkbenchProvider.tsx` still owns sessions, streaming chat, ingestion events, preview state, uploads, reclustering, viewport state, and toasts. | Confirmed frontend architecture risk | Needs domain-sliced providers/hooks or reducer slices. |
+| Knowledge graph explorer | Frontend graph/model code is partially extracted, but explorer remains central. | `KnowledgeGraphExplorer.tsx` mixes layout simulation, camera/export, URL sync, toolbar, inspector, and accessibility behavior. | Confirmed maintainability risk | Needs layout/camera/canvas/inspector splits before minimal-risk scoring. |
+| PDF preview HTML sink | Scanner flags `dangerouslySetInnerHTML`. | Frontend injects backend preview HTML; backend escapes document text before inserting controlled highlight spans. Existing markdown tests also assert raw HTML escaping for assistant output. | Benign but governed | Keep as security-sensitive review target; structured preview blocks would be stronger. |
+| Tracked one-off rewrite scripts | Source scan found file-write tooling in root. | `patchTSX.js` and `splitCSS.js` were tracked, unreferenced scripts that rewrote source files. | Confirmed repo hygiene slop, fixed | Removed obsolete mutation scripts from tracked source. |
 
-**Highest-Risk Clusters**
-- `backend/app/services/rag_service.py`: still owns several product-level flows. The current permanent fix removed fake helper ownership; a future split should only happen around real runtime boundaries, such as retrieval orchestration versus answer generation.
-- `backend/app/services/document_service.py`: remains a high-connectivity service in Graphify. It was not expanded in this pass because source evidence did not show the current root cause crossing into it.
-- `frontend/src/app/providers/workbench/WorkbenchProvider.tsx`: improved, but still central. New state helpers reduce risk; further splitting should follow actual UI ownership boundaries, not arbitrary file size.
+**Aggressive Review Targets**
+- Split `DocumentService` into document repository, chunk catalog repository, vector chunk store, and preview rendering service.
+- Give ingestion/topic indexing a durable unit-of-work or run-id reconciliation model before mutating SQLite, Chroma, and KG state as if they were one transaction.
+- Split `WorkbenchProvider` by domain: chat/session, ingestion/pipeline, preview, and viewport/toast UI.
+- Split `KnowledgeGraphExplorer` into layout hook, camera hook, canvas, toolbar, and inspector components.
+- Replace the PDF preview HTML contract with structured preview blocks or an explicit sanitized-HTML type plus malicious-PDF tests.
 
-**Permanent Fixes Applied**
-- Removed `RagService` private staticmethod aliases for helper modules.
-- Replaced internal `self._helper(...)` calls with direct module function calls for prompting, comparison, citation conversion, metadata conversion, answer cleanup, fallback citation derivation, and text trimming.
-- Removed the duplicated `RagService._citation_from_context` implementation in favor of `rag_citations.citation_from_context`.
-- Updated `backend/tests/test_chat_intent_and_reasoning.py` to import helper APIs from `rag_citations`, `rag_answer_text`, and `rag_types` instead of reaching through private `RagService` members.
+**Permanent Fixes Applied In This Pass**
+- Added `backend/app/services/rag_retrieval.py` and moved chunk retrieval, lexical retrieval, comparison context retrieval, scoped collection selection, web result reranking, and local-context checks out of `RagService`.
+- Reduced `backend/app/services/rag_service.py` from 1,721 lines to 854 lines.
+- Added `backend/tests/test_rag_retrieval.py` to guard direct lexical shortcuts and collection-scoped retrieval leakage.
+- Moved reusable answer sentence helpers into `backend/app/services/rag_answer_text.py`.
+- Deleted stale tracked refactor scripts `patchTSX.js` and `splitCSS.js`.
+- Regenerated Graphify after the code changes.
 
 **Validation**
-- `python -m graphify update . --force` from the repository root: passed; final graph rebuilt with `986 nodes`, `1862 edges`, `52 communities` in the command output, and `GRAPH_REPORT.md` summarizes `30 communities detected`.
-- `python C:/Users/SAI/.codex/skills/audit-ai-slop/scripts/graphify_slop_scan.py --graphify-out graphify-out --source-root . --format markdown`: completed before the final root-cause cleanup; graph-only score `19/100`, source-augmented triage `64/100`.
-- `backend/.venv/Scripts/python -m pytest`: passed, `30 passed`.
+- `python C:/Users/SAI/.codex/skills/audit-ai-slop/scripts/graphify_slop_scan.py --graphify-out graphify-out --source-root . --format markdown`: completed before fixes; graph-only `19/100`, source-augmented triage `64/100`.
+- `python -m graphify update . --force`: passed after fixes; rebuilt `1043 nodes`, `2020 edges`, `52 communities` in command output, with `30 communities detected` in `GRAPH_REPORT.md`.
+- `backend/.venv/Scripts/python -m pytest`: passed, `32 passed`.
 - `backend/.venv/Scripts/python -m compileall app tests`: passed.
 - `frontend/npm run typecheck`: passed.
 - `frontend/npm run test:message-markdown`: passed, `2 passed`.
@@ -48,9 +58,8 @@ Confidence: Medium
 - `frontend/npx tsx --test src/app/providers/workbench/workbenchStateHelpers.test.ts`: passed, `7 passed`.
 - `frontend/npm run build`: passed.
 - `frontend/npm audit --omit=dev --audit-level=moderate`: passed, `0 vulnerabilities`.
-- `git diff --check`: passed, with only line-ending conversion warnings from Git.
+- `git diff --check`: passed, with only Git line-ending conversion warnings.
 
 **Residual Risk**
-- `RagService` is still a large coordinator. The next root-cause improvement, if needed, is to split real orchestration responsibilities rather than extract more generic helper files.
-- The Graphify source scanner should eventually receive project-specific excludes for ignored `tmp`, docs, mockups, generated outputs, and lockfiles to reduce false positives.
-- No direct evidence of AI authorship was found; this report classifies slop-like engineering risk only.
+- Whole-repo slop risk is low, not minimal. The remaining issues are real architecture work, not scanner noise.
+- I did not rerun the AI-slop scanner after these fixes because the stop-hook completion gate says not to restart the audit/fix loop once confirmed slop from this prompt has been fixed.

@@ -25,6 +25,10 @@ MODEL_THINKING_SENSITIVE_LINE_PATTERN = re.compile(
     r"|^[^\n]*(?:chain[-\s]*of[-\s]*thought|internal policy|policy text)[^\n]*(?:\n|$)"
 )
 TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
+LOW_SIGNAL_ANSWER_PREFIX_PATTERN = re.compile(
+    r"^(?:in the above|in the below|the above|the below|but\b|and the|getinstance\b)",
+    re.IGNORECASE,
+)
 DIRECT_QA_PATTERN = re.compile(
     r"^\s*(?:question:\s*(?P<question>.+?)\n+\s*answer:\s*(?P<answer>.+)|(?P<numbered_question>\d{1,3}[.)]\s*.+?)\n+\n*(?P<numbered_answer>.+))$",
     re.IGNORECASE | re.DOTALL,
@@ -37,10 +41,55 @@ CONCISE_ANSWER_PATTERN = re.compile(
     re.IGNORECASE,
 )
 DIRECT_QA_MIN_TOKEN_COUNT = 4
+DIRECT_QA_MATCH_THRESHOLD = 0.7
 
 
 def tokenize(text: str) -> list[str]:
     return TOKEN_PATTERN.findall(text.lower())
+
+
+def first_sentence(text: str) -> str:
+    normalized = re.sub(r"\s+", " ", text).strip()
+    if not normalized:
+        return ""
+    sentence = re.split(r"(?<=[.!?])\s+", normalized, maxsplit=1)[0].strip()
+    if not sentence:
+        return ""
+    if sentence[-1] not in ".!?":
+        sentence = f"{sentence}."
+    return sentence
+
+
+def is_informative_answer_sentence(sentence: str) -> bool:
+    if not sentence:
+        return False
+    if sentence.endswith("?"):
+        return False
+    if LOW_SIGNAL_ANSWER_PREFIX_PATTERN.match(sentence):
+        return False
+    return len(tokenize(sentence)) >= 4
+
+
+def comparison_sentence_for_context(context: RetrievedContext) -> str:
+    qa_pair = extract_direct_qa_pair(context.text)
+    if qa_pair is not None:
+        candidate = first_sentence(qa_pair[1])
+        if is_informative_answer_sentence(candidate):
+            return candidate
+
+    normalized = normalize_context_text(context.text)
+    fallback = re.sub(
+        r"^(?:\d{1,3}[.)]\s*)?.+?\?\s*",
+        "",
+        normalized,
+        count=1,
+        flags=re.DOTALL,
+    )
+    for sentence in re.split(r"(?<=[.!?])\s+", fallback):
+        candidate = first_sentence(sentence)
+        if is_informative_answer_sentence(candidate):
+            return candidate
+    return ""
 
 
 def strip_thinking_blocks(answer: str) -> str:
