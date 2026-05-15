@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import re
-from collections import Counter
 from datetime import UTC, datetime
 from typing import Sequence
 
@@ -29,17 +28,20 @@ from app.services.rag_comparison import (
     comparison_subqueries,
 )
 from app.services.rag_grounding import CONTEXT_FALLBACK_CHAR_LIMIT, clean_context_snippet, normalize_context_text
+from app.services.rag_retrieval_policy import (
+    build_fts_query,
+    rerank_pool_limit,
+    rrf_score,
+    select_final_chunks,
+    select_rerank_candidate_pool,
+    should_query_flat_collection,
+    should_rerank_candidates,
+)
 from app.services.rag_types import CandidateChunk, RetrievalResult, RetrievedContext
 from app.services.reranker_service import RerankerService
 from app.services.web_search_service import WebSearchResult
 
 
-RRF_K = 60
-MIN_TOPIC_RETRIEVAL_CANDIDATES = 5
-MIN_INTERACTIVE_RERANK_CANDIDATES = 6
-MAX_INTERACTIVE_RERANK_CANDIDATES = 8
-DOMINANT_RESULT_SHARE = 0.75
-FUSED_SCORE_DOMINANCE_MARGIN = 0.01
 LOGGER = logging.getLogger(__name__)
 
 
@@ -89,10 +91,12 @@ class RagRetrievalEngine:
                 if existing is None or candidate.fused_score > existing.fused_score:
                     candidate_map[candidate.chunk_id] = candidate
 
-        include_flat = self._should_query_flat_collection(
+        include_flat = should_query_flat_collection(
             collection_id=collection_id,
             target_collections=target_collections,
             candidate_count=len(candidate_map),
+            collection_name=self._collection_name,
+            top_k=self._top_k,
         )
         if include_flat:
             for candidate in self._hybrid_candidates_for_collection(
@@ -124,26 +128,29 @@ class RagRetrievalEngine:
             key=lambda chunk: chunk.fused_score,
             reverse=True,
         )
-        rerank_pool_limit = self._rerank_pool_limit(
+        coverage_groups = self._comparison_hit_groups(
             question=question,
-            ordered_candidates=fused_candidates,
-        )
-        fused_candidates = self._select_rerank_candidate_pool(
-            question=question,
-            ordered_candidates=fused_candidates,
             collection_names=scoped_collection_names,
             user_id=user_id,
-            limit=rerank_pool_limit,
+        )
+        candidate_limit = rerank_pool_limit(
+            question=question,
+            ordered_candidates=fused_candidates,
+            top_k=self._top_k,
+        )
+        fused_candidates = select_rerank_candidate_pool(
+            ordered_candidates=fused_candidates,
+            coverage_groups=coverage_groups,
+            limit=candidate_limit,
         )
         ranked_candidates = self._rank_candidates(
             question=question,
             ordered_candidates=fused_candidates,
         )
-        selected_chunks = self._select_final_chunks(
-            question=question,
+        selected_chunks = select_final_chunks(
             ranked_candidates=ranked_candidates,
-            collection_names=scoped_collection_names,
-            user_id=user_id,
+            coverage_groups=coverage_groups,
+            top_k=self._top_k,
         )
 
         return RetrievalResult(
@@ -180,32 +187,35 @@ class RagRetrievalEngine:
             key=lambda candidate: candidate.fused_score,
             reverse=True,
         )
-        rerank_pool_limit = self._rerank_pool_limit(
+        coverage_groups = self._comparison_hit_groups(
             question=question,
-            ordered_candidates=candidates,
-        )
-        candidates = self._select_rerank_candidate_pool(
-            question=question,
-            ordered_candidates=candidates,
             collection_names=[target_collection],
             user_id=user_id,
-            limit=rerank_pool_limit,
+        )
+        candidate_limit = rerank_pool_limit(
+            question=question,
+            ordered_candidates=candidates,
+            top_k=self._top_k,
+        )
+        candidates = select_rerank_candidate_pool(
+            ordered_candidates=candidates,
+            coverage_groups=coverage_groups,
+            limit=candidate_limit,
         )
         if not candidates:
             return RetrievalResult(chunks=[], top_rerank_score=None)
 
         for rank, candidate in enumerate(candidates):
-            candidate.fused_score = self._rrf_score(rank)
+            candidate.fused_score = rrf_score(rank)
 
         ranked_candidates = self._rank_candidates(
             question=question,
             ordered_candidates=candidates,
         )
-        selected_chunks = self._select_final_chunks(
-            question=question,
+        selected_chunks = select_final_chunks(
             ranked_candidates=ranked_candidates,
-            collection_names=[target_collection],
-            user_id=user_id,
+            coverage_groups=coverage_groups,
+            top_k=self._top_k,
         )
 
         return RetrievalResult(
@@ -432,21 +442,6 @@ class RagRetrievalEngine:
                 return topic.chunk_count > 0
         return False
 
-    def _should_query_flat_collection(
-        self,
-        *,
-        collection_id: str,
-        target_collections: list[str],
-        candidate_count: int,
-    ) -> bool:
-        if collection_id != "all-pdfs":
-            return False
-        if self._collection_name in target_collections:
-            return False
-        if not target_collections:
-            return True
-        return candidate_count < max(self._top_k, MIN_TOPIC_RETRIEVAL_CANDIDATES)
-
     def _resolve_target_collections(
         self,
         query_embedding: list[float],
@@ -493,7 +488,7 @@ class RagRetrievalEngine:
             if candidate is None:
                 candidate = lexical_candidate
                 candidates[chunk_id] = candidate
-            candidate.fused_score += self._rrf_score(rank)
+            candidate.fused_score += rrf_score(rank)
 
         return list(candidates.values())
 
@@ -505,7 +500,7 @@ class RagRetrievalEngine:
         user_id: str,
         limit: int,
     ) -> list[CandidateChunk]:
-        fts_query = self._build_fts_query(question)
+        fts_query = build_fts_query(question)
         if not fts_query:
             return []
 
@@ -576,129 +571,13 @@ class RagRetrievalEngine:
                         limit=max(self._top_k, 4),
                     )
                 ):
-                    bonus = self._rrf_score(rank) * 0.75
+                    bonus = rrf_score(rank) * 0.75
                     existing = candidate_map.get(candidate.chunk_id)
                     if existing is None:
                         candidate.fused_score = bonus
                         candidate_map[candidate.chunk_id] = candidate
                     else:
                         existing.fused_score += bonus
-
-    def _select_final_chunks(
-        self,
-        *,
-        question: str,
-        ranked_candidates: Sequence[CandidateChunk],
-        collection_names: Sequence[str],
-        user_id: str,
-    ) -> list[CandidateChunk]:
-        coverage_groups = self._comparison_hit_groups(
-            question=question,
-            collection_names=collection_names,
-            user_id=user_id,
-        )
-        if not coverage_groups:
-            return list(ranked_candidates[: self._top_k])
-
-        selected: list[CandidateChunk] = []
-        selected_ids: set[str] = set()
-        for hit_ids in coverage_groups:
-            for candidate in ranked_candidates:
-                if candidate.chunk_id not in hit_ids or candidate.chunk_id in selected_ids:
-                    continue
-                selected.append(candidate)
-                selected_ids.add(candidate.chunk_id)
-                break
-
-        for candidate in ranked_candidates:
-            if candidate.chunk_id in selected_ids:
-                continue
-            selected.append(candidate)
-            selected_ids.add(candidate.chunk_id)
-            if len(selected) >= self._top_k:
-                break
-
-        return selected[: self._top_k]
-
-    def _select_rerank_candidate_pool(
-        self,
-        *,
-        question: str,
-        ordered_candidates: Sequence[CandidateChunk],
-        collection_names: Sequence[str],
-        user_id: str,
-        limit: int,
-    ) -> list[CandidateChunk]:
-        if not ordered_candidates:
-            return []
-
-        selected = list(ordered_candidates[:limit])
-        selected_ids = {candidate.chunk_id for candidate in selected}
-        for hit_ids in self._comparison_hit_groups(
-            question=question,
-            collection_names=collection_names,
-            user_id=user_id,
-        ):
-            if any(candidate.chunk_id in hit_ids for candidate in selected):
-                continue
-            for candidate in ordered_candidates:
-                if candidate.chunk_id not in hit_ids or candidate.chunk_id in selected_ids:
-                    continue
-                selected.append(candidate)
-                selected_ids.add(candidate.chunk_id)
-                break
-
-        return selected
-
-    def _rerank_pool_limit(
-        self,
-        *,
-        question: str,
-        ordered_candidates: Sequence[CandidateChunk],
-    ) -> int:
-        if not ordered_candidates:
-            return 0
-        if comparison_subqueries(question):
-            return min(len(ordered_candidates), max(self._top_k * 2, MAX_INTERACTIVE_RERANK_CANDIDATES))
-        return min(
-            len(ordered_candidates),
-            max(self._top_k + 1, MIN_INTERACTIVE_RERANK_CANDIDATES),
-        )
-
-    def _should_rerank_candidates(
-        self,
-        *,
-        question: str,
-        ordered_candidates: Sequence[CandidateChunk],
-    ) -> bool:
-        if len(ordered_candidates) <= 1:
-            return False
-        if comparison_subqueries(question):
-            return True
-
-        top_window = list(ordered_candidates[: max(self._top_k, 4)])
-        if len(top_window) <= 1:
-            return False
-
-        fused_margin = top_window[0].fused_score - top_window[-1].fused_score
-        if fused_margin >= FUSED_SCORE_DOMINANCE_MARGIN:
-            return False
-
-        dominant_document_count = Counter(candidate.document_id for candidate in top_window).most_common(1)[0][1]
-        if dominant_document_count / len(top_window) >= DOMINANT_RESULT_SHARE:
-            return False
-
-        collection_counts = Counter(
-            candidate.collection_id
-            for candidate in top_window
-            if candidate.collection_id
-        )
-        if collection_counts:
-            dominant_collection_count = collection_counts.most_common(1)[0][1]
-            if dominant_collection_count / len(top_window) >= DOMINANT_RESULT_SHARE:
-                return False
-
-        return True
 
     def _rank_candidates(
         self,
@@ -707,9 +586,10 @@ class RagRetrievalEngine:
         ordered_candidates: Sequence[CandidateChunk],
     ) -> list[CandidateChunk]:
         ranked_candidates = list(ordered_candidates)
-        if not ranked_candidates or not self._should_rerank_candidates(
+        if not ranked_candidates or not should_rerank_candidates(
             question=question,
             ordered_candidates=ranked_candidates,
+            top_k=self._top_k,
         ):
             return ranked_candidates
 
@@ -799,29 +679,11 @@ class RagRetrievalEngine:
                     page_number=int(metadata["page_number"]),
                     chunk_index=int(metadata["chunk_index"]),
                     text=str(text),
-                    fused_score=self._rrf_score(rank),
+                    fused_score=rrf_score(rank),
                     **docling_source_metadata_from_metadata(dict(metadata or {})),
                 )
             )
         return candidates
-
-    @staticmethod
-    def _build_fts_query(text: str) -> str:
-        tokens = tokenize(text)
-        if not tokens:
-            return ""
-        unique_tokens: list[str] = []
-        seen_tokens: set[str] = set()
-        for token in tokens:
-            if token in seen_tokens:
-                continue
-            seen_tokens.add(token)
-            unique_tokens.append(token)
-        return " OR ".join(f'"{token}"' for token in unique_tokens)
-
-    @staticmethod
-    def _rrf_score(rank: int) -> float:
-        return 1.0 / (RRF_K + rank + 1)
 
     @staticmethod
     def _web_result_freshness_bonus(query: str, result: WebSearchResult) -> float:
