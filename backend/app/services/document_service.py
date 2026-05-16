@@ -1,42 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from app.services.document_catalog_service import DocumentCatalogService
+from app.services.document_chunk_metadata_service import DocumentChunkMetadataService
 from app.core.chroma_store import ChromaStore
 from app.core.database import Database
+from app.services.document_types import RetrievalChunkCatalogEntry, StoredChunk
 
 
 ACTIVE_DOCUMENT_STATUSES = {"queued", "parsing", "ocr", "chunking", "embedding", "clustering", "finalizing"}
-
-
-@dataclass
-class StoredChunk:
-    id: str
-    document_id: str
-    user_id: str
-    pdf_name: str
-    page_number: int
-    chunk_index: int
-    text: str
-    char_start: int | None = None
-    char_end: int | None = None
-    source_text: str | None = None
-
-
-@dataclass(frozen=True)
-class RetrievalChunkCatalogEntry:
-    chunk_id: str
-    document_id: str
-    user_id: str
-    pdf_name: str
-    page_number: int
-    chunk_index: int
-    text: str
-    collection_id: str | None = None
-    is_indexed: bool = False
 
 
 class DocumentService:
@@ -50,6 +25,15 @@ class DocumentService:
         self._database = database
         self._chroma_store = chroma_store
         self._collection_name = collection_name
+        self._catalog_service = DocumentCatalogService(
+            database=database,
+            collection_name=collection_name,
+        )
+        self._chunk_metadata_service = DocumentChunkMetadataService(
+            database=database,
+            collection_getter=self._collection,
+            catalog_service=self._catalog_service,
+        )
 
     def _collection(self) -> Any:
         return self._chroma_store.collection(self._collection_name)
@@ -287,110 +271,7 @@ class DocumentService:
         return int(row["total_chunks"]) if row and row["total_chunks"] is not None else 0
 
     def sync_chunk_publication_flags(self) -> None:
-        with self._database.connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT id, user_id, status
-                FROM ingested_documents
-                """
-            ).fetchall()
-
-        document_state_by_id = {
-            str(row["id"]): {
-                "user_id": str(row["user_id"]),
-                "is_indexed": 1 if str(row["status"]) == "indexed" else 0,
-            }
-            for row in rows
-        }
-        chunk_rows = self._collection().get(include=["documents", "metadatas"])
-        chunk_ids = [str(chunk_id) for chunk_id in chunk_rows.get("ids", [])]
-        documents = [str(text) for text in chunk_rows.get("documents", [])]
-        metadatas = [dict(metadata or {}) for metadata in chunk_rows.get("metadatas", [])]
-        catalog_entries = [
-            RetrievalChunkCatalogEntry(
-                chunk_id=str(chunk_id),
-                document_id=str(metadata.get("document_id", "")),
-                user_id=self._normalized_chunk_user_id(
-                    metadata,
-                    document_state_by_id=document_state_by_id,
-                ),
-                pdf_name=str(metadata.get("pdf_name", "")),
-                page_number=int(metadata.get("page_number", 0)),
-                chunk_index=int(metadata.get("chunk_index", 0)),
-                text=str(text),
-                collection_id=(
-                    str(metadata.get("collection_id")).strip()
-                    if metadata.get("collection_id") is not None
-                    else None
-                ),
-                is_indexed=self._normalized_chunk_is_indexed(
-                    metadata,
-                    document_state_by_id=document_state_by_id,
-                ),
-            )
-            for chunk_id, text, metadata in zip(
-                chunk_ids,
-                documents,
-                metadatas,
-                strict=False,
-            )
-            if metadata
-        ]
-
-        updated_ids: list[str] = []
-        updated_metadatas: list[dict[str, object]] = []
-        for chunk_id, metadata in zip(chunk_ids, metadatas, strict=False):
-            document_id = str(metadata.get("document_id", "")).strip()
-            document_state = document_state_by_id.get(document_id)
-            if not document_id or document_state is None:
-                continue
-            normalized_user_id = str(document_state["user_id"])
-            expected_value = int(document_state["is_indexed"])
-            current_value = int(metadata.get("is_indexed", -1))
-            current_user_id = str(metadata.get("user_id", "")).strip()
-            if current_value == expected_value and current_user_id == normalized_user_id:
-                continue
-            updated_ids.append(chunk_id)
-            updated_metadatas.append(
-                {
-                    **metadata,
-                    "user_id": normalized_user_id,
-                    "is_indexed": expected_value,
-                }
-            )
-
-        if updated_ids:
-            self._collection().update(ids=updated_ids, metadatas=updated_metadatas)
-            self._bump_retrieval_corpus_version()
-        self._sync_chunk_catalog(catalog_entries)
-
-    @staticmethod
-    def _normalized_chunk_user_id(
-        metadata: dict[str, object],
-        *,
-        document_state_by_id: dict[str, dict[str, object]],
-    ) -> str:
-        stored_user_id = str(metadata.get("user_id", "")).strip()
-        if stored_user_id:
-            return stored_user_id
-
-        document_id = str(metadata.get("document_id", "")).strip()
-        document_state = document_state_by_id.get(document_id)
-        if document_state is None:
-            return stored_user_id
-        return str(document_state["user_id"])
-
-    @staticmethod
-    def _normalized_chunk_is_indexed(
-        metadata: dict[str, object],
-        *,
-        document_state_by_id: dict[str, dict[str, object]],
-    ) -> bool:
-        document_id = str(metadata.get("document_id", "")).strip()
-        document_state = document_state_by_id.get(document_id)
-        if document_state is None:
-            return bool(metadata.get("is_indexed", 0))
-        return bool(document_state["is_indexed"])
+        self._chunk_metadata_service.sync_chunk_publication_flags()
 
     def publish_document_chunks(self, document_id: str, *, user_id: str) -> None:
         rows = self._collection().get(
@@ -414,14 +295,10 @@ class DocumentService:
                 """,
                 (document_id, user_id),
             )
-        self._bump_retrieval_corpus_version()
+        self._catalog_service.bump_retrieval_corpus_version()
 
     def retrieval_corpus_version(self) -> int:
-        with self._database.connect() as connection:
-            row = connection.execute(
-                "SELECT version FROM retrieval_corpus_state WHERE id = 1"
-            ).fetchone()
-        return int(row["version"]) if row else 0
+        return self._catalog_service.retrieval_corpus_version()
 
     def clear_document_content(self, document_id: str, *, user_id: str) -> None:
         with self._database.connect() as connection:
@@ -445,76 +322,22 @@ class DocumentService:
             )
 
         self._collection().delete(where={"$and": [{"document_id": document_id}, {"user_id": user_id}]})
-        self._bump_retrieval_corpus_version()
+        self._catalog_service.bump_retrieval_corpus_version()
 
     def upsert_chunk_catalog_entries(
         self,
         entries: list[RetrievalChunkCatalogEntry],
     ) -> None:
-        if not entries:
-            return
-
-        with self._database.connect() as connection:
-            connection.executemany(
-                """
-                INSERT INTO retrieval_chunks (
-                    chunk_id,
-                    document_id,
-                    user_id,
-                    pdf_name,
-                    page_number,
-                    chunk_index,
-                    collection_id,
-                    is_indexed,
-                    text
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(chunk_id) DO UPDATE SET
-                    document_id = excluded.document_id,
-                    user_id = excluded.user_id,
-                    pdf_name = excluded.pdf_name,
-                    page_number = excluded.page_number,
-                    chunk_index = excluded.chunk_index,
-                    collection_id = excluded.collection_id,
-                    is_indexed = excluded.is_indexed,
-                    text = excluded.text
-                """,
-                [
-                    (
-                        entry.chunk_id,
-                        entry.document_id,
-                        entry.user_id,
-                        entry.pdf_name,
-                        entry.page_number,
-                        entry.chunk_index,
-                        entry.collection_id,
-                        int(entry.is_indexed),
-                        entry.text,
-                    )
-                    for entry in entries
-                ],
-            )
+        self._catalog_service.upsert_chunk_catalog_entries(entries)
 
     def update_chunk_collections(
         self,
         *,
         chunk_collection_ids: dict[str, str],
     ) -> None:
-        if not chunk_collection_ids:
-            return
-
-        with self._database.connect() as connection:
-            connection.executemany(
-                """
-                UPDATE retrieval_chunks
-                SET collection_id = ?
-                WHERE chunk_id = ?
-                """,
-                [
-                    (collection_id, chunk_id)
-                    for chunk_id, collection_id in chunk_collection_ids.items()
-                ],
-            )
+        self._catalog_service.update_chunk_collections(
+            chunk_collection_ids=chunk_collection_ids,
+        )
 
     def search_chunk_catalog(
         self,
@@ -524,54 +347,12 @@ class DocumentService:
         user_id: str,
         limit: int,
     ) -> list[RetrievalChunkCatalogEntry]:
-        where_clause = "retrieval_chunks_fts MATCH ? AND rc.user_id = ? AND rc.is_indexed = 1"
-        parameters: list[object] = [query, user_id]
-        if collection_id not in {"all-pdfs", self._collection_name}:
-            where_clause += " AND rc.collection_id = ?"
-            parameters.append(collection_id)
-        parameters.append(limit)
-
-        with self._database.connect() as connection:
-            rows = connection.execute(
-                f"""
-                SELECT
-                    rc.chunk_id,
-                    rc.document_id,
-                    rc.user_id,
-                    rc.pdf_name,
-                    rc.page_number,
-                    rc.chunk_index,
-                    rc.collection_id,
-                    rc.is_indexed,
-                    rc.text
-                FROM retrieval_chunks_fts
-                INNER JOIN retrieval_chunks AS rc
-                    ON rc.rowid = retrieval_chunks_fts.rowid
-                WHERE {where_clause}
-                ORDER BY bm25(retrieval_chunks_fts), rc.page_number, rc.chunk_index
-                LIMIT ?
-                """,
-                parameters,
-            ).fetchall()
-
-        return [
-            RetrievalChunkCatalogEntry(
-                chunk_id=str(row["chunk_id"]),
-                document_id=str(row["document_id"]),
-                user_id=str(row["user_id"]),
-                pdf_name=str(row["pdf_name"]),
-                page_number=int(row["page_number"]),
-                chunk_index=int(row["chunk_index"]),
-                collection_id=(
-                    str(row["collection_id"])
-                    if row["collection_id"] is not None
-                    else None
-                ),
-                is_indexed=bool(row["is_indexed"]),
-                text=str(row["text"]),
-            )
-            for row in rows
-        ]
+        return self._catalog_service.search_chunk_catalog(
+            query=query,
+            collection_id=collection_id,
+            user_id=user_id,
+            limit=limit,
+        )
 
     def remove_document(self, pdf_name: str, *, user_id: str) -> None:
         stored = self.get_document_by_name(pdf_name, user_id=user_id)
@@ -772,74 +553,6 @@ class DocumentService:
             ),
         )
 
-    def _bump_retrieval_corpus_version(self) -> None:
-        with self._database.connect() as connection:
-            connection.execute(
-                """
-                UPDATE retrieval_corpus_state
-                SET version = version + 1
-                WHERE id = 1
-                """
-            )
-
-    def _sync_chunk_catalog(
-        self,
-        entries: list[RetrievalChunkCatalogEntry],
-    ) -> None:
-        desired_by_id = {entry.chunk_id: entry for entry in entries}
-        with self._database.connect() as connection:
-            existing_rows = connection.execute(
-                """
-                SELECT
-                    chunk_id,
-                    document_id,
-                    user_id,
-                    pdf_name,
-                    page_number,
-                    chunk_index,
-                    collection_id,
-                    is_indexed,
-                    text
-                FROM retrieval_chunks
-                """
-            ).fetchall()
-            existing_by_id = {
-                str(row["chunk_id"]): RetrievalChunkCatalogEntry(
-                    chunk_id=str(row["chunk_id"]),
-                    document_id=str(row["document_id"]),
-                    user_id=str(row["user_id"]),
-                    pdf_name=str(row["pdf_name"]),
-                    page_number=int(row["page_number"]),
-                    chunk_index=int(row["chunk_index"]),
-                    collection_id=(
-                        str(row["collection_id"])
-                        if row["collection_id"] is not None
-                        else None
-                    ),
-                    is_indexed=bool(row["is_indexed"]),
-                    text=str(row["text"]),
-                )
-                for row in existing_rows
-            }
-
-            deleted_chunk_ids = [
-                chunk_id
-                for chunk_id in existing_by_id
-                if chunk_id not in desired_by_id
-            ]
-            if deleted_chunk_ids:
-                connection.executemany(
-                    "DELETE FROM retrieval_chunks WHERE chunk_id = ?",
-                    [(chunk_id,) for chunk_id in deleted_chunk_ids],
-                )
-
-        changed_entries = [
-            entry
-            for chunk_id, entry in desired_by_id.items()
-            if existing_by_id.get(chunk_id) != entry
-        ]
-        self.upsert_chunk_catalog_entries(changed_entries)
-
     def sync_active_chunk_metadata(self) -> None:
         active_documents = [
             {
@@ -852,74 +565,7 @@ class DocumentService:
             return
 
         for document in active_documents:
-            self._sync_document_chunk_metadata(
+            self._chunk_metadata_service.sync_document_chunk_metadata(
                 document_id=document["document_id"],
                 user_id=document["user_id"],
             )
-
-    def _sync_document_chunk_metadata(self, *, document_id: str, user_id: str) -> None:
-        with self._database.connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT chunk_id, user_id, is_indexed, collection_id
-                FROM retrieval_chunks
-                WHERE document_id = ? AND user_id = ?
-                """,
-                (document_id, user_id),
-            ).fetchall()
-
-        catalog_by_chunk_id = {
-            str(row["chunk_id"]): {
-                "user_id": str(row["user_id"]),
-                "is_indexed": int(row["is_indexed"]),
-                "collection_id": (
-                    str(row["collection_id"])
-                    if row["collection_id"] is not None
-                    else None
-                ),
-            }
-            for row in rows
-        }
-        if not catalog_by_chunk_id:
-            return
-
-        chunk_rows = self._collection().get(
-            where={"$and": [{"document_id": document_id}, {"user_id": user_id}]},
-            include=["metadatas"],
-        )
-        chunk_ids = [str(chunk_id) for chunk_id in chunk_rows.get("ids", [])]
-        metadatas = [dict(metadata or {}) for metadata in chunk_rows.get("metadatas", [])]
-
-        updated_ids: list[str] = []
-        updated_metadatas: list[dict[str, object]] = []
-        for chunk_id, metadata in zip(chunk_ids, metadatas, strict=False):
-            expected = catalog_by_chunk_id.get(chunk_id)
-            if expected is None:
-                continue
-
-            current_user_id = str(metadata.get("user_id", "")).strip()
-            current_is_indexed = int(metadata.get("is_indexed", -1))
-            current_collection_id = (
-                str(metadata.get("collection_id")).strip()
-                if metadata.get("collection_id") is not None
-                else None
-            )
-            if (
-                current_user_id == expected["user_id"]
-                and current_is_indexed == expected["is_indexed"]
-                and current_collection_id == expected["collection_id"]
-            ):
-                continue
-
-            updated_ids.append(chunk_id)
-            updated_metadatas.append(
-                {
-                    **metadata,
-                    "user_id": expected["user_id"],
-                    "is_indexed": expected["is_indexed"],
-                    "collection_id": expected["collection_id"],
-                }
-            )
-
-        if updated_ids:
-            self._collection().update(ids=updated_ids, metadatas=updated_metadatas)

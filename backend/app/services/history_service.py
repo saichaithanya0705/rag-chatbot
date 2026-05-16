@@ -1,17 +1,22 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from app.core.chroma_store import ChromaStore
 from app.core.database import Database
 from app.models.schemas import CitationPayload, ToolCallPayload
-from app.services.answer_trace import build_answer_trace
 from app.services.conversation_context import looks_context_dependent
+from app.services.history_serialization import (
+    fallback_title,
+    sanitize_title,
+    serialize_message_row,
+    serialize_session_row,
+)
+from app.services.history_memory_store import HistoryMemoryStore, MemoryTurn
+from app.services.history_turn_persistence import persist_turn_records
 from app.services.ollama_client import OllamaClient
 
 LOGGER = logging.getLogger(__name__)
@@ -21,33 +26,6 @@ TITLE_GENERATION_TIMEOUT_SECONDS = 12.0
 
 def _utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
-
-
-def _resolve_session_group(updated_at: str) -> str:
-    parsed = datetime.fromisoformat(updated_at)
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-
-    local_tz = datetime.now().astimezone().tzinfo
-    today = datetime.now(local_tz).date()
-    session_date = parsed.astimezone(local_tz).date()
-    delta_days = (today - session_date).days
-
-    if delta_days <= 0:
-        return "Today"
-    if delta_days == 1:
-        return "Yesterday"
-    if delta_days <= 7:
-        return "Last 7 days"
-    return "Older"
-
-
-@dataclass
-class MemoryTurn:
-    user_content: str
-    assistant_content: str
-    session_id: str
-    collection_id: str
 
 
 class HistoryService:
@@ -63,6 +41,10 @@ class HistoryService:
         self._chroma_store = chroma_store
         self._memory_collection_name = memory_collection_name
         self._cross_session_memory_enabled = cross_session_memory_enabled
+        self._memory_store = HistoryMemoryStore(
+            collection_getter=self._memory_collection,
+            cross_session_memory_enabled=cross_session_memory_enabled,
+        )
         self._background_memory_tasks: set[asyncio.Task[None]] = set()
 
     def _memory_collection(self):
@@ -81,7 +63,7 @@ class HistoryService:
                 (user_id,),
             ).fetchall()
 
-        return [self._serialize_session_row(row) for row in rows]
+        return [serialize_session_row(row) for row in rows]
 
     def _backfill_missing_titles(self, *, user_id: str) -> None:
         with self._database.connect() as connection:
@@ -113,8 +95,8 @@ class HistoryService:
             ).fetchall()
 
             for row in rows:
-                fallback_title = self._fallback_title(str(row["first_user_content"] or ""))
-                if not fallback_title:
+                next_title = fallback_title(str(row["first_user_content"] or ""))
+                if not next_title:
                     continue
                 connection.execute(
                     """
@@ -122,7 +104,7 @@ class HistoryService:
                     SET title = ?
                     WHERE id = ? AND user_id = ? AND title = 'New chat'
                     """,
-                    (fallback_title, str(row["id"]), user_id),
+                    (next_title, str(row["id"]), user_id),
                 )
 
     def create_session(self, collection_id: str = "all-pdfs", *, user_id: str) -> dict[str, str]:
@@ -198,7 +180,7 @@ class HistoryService:
     ) -> dict[str, str]:
         existing = self._fetch_session_row(session_id, user_id=user_id)
         if existing:
-            return self._serialize_session_row(existing)
+            return serialize_session_row(existing)
 
         existing_other_user = self._fetch_session_row_any_user(session_id)
         if existing_other_user and str(existing_other_user["user_id"]) != user_id:
@@ -226,14 +208,14 @@ class HistoryService:
         row = self._fetch_session_row(session_id, user_id=user_id)
         if not row:
             raise FileNotFoundError(f"Session '{session_id}' was not found.")
-        return self._serialize_session_row(row)
+        return serialize_session_row(row)
 
     def get_session_detail(self, session_id: str, *, user_id: str) -> dict[str, object] | None:
         row = self._fetch_session_row(session_id, user_id=user_id)
         if not row:
             return None
 
-        snapshot = self._serialize_session_row(row)
+        snapshot = serialize_session_row(row)
         return {
             **snapshot,
             "messages": self.get_messages(session_id, user_id=user_id),
@@ -266,7 +248,7 @@ class HistoryService:
                 (session_id, user_id),
             ).fetchall()
 
-        return [self._serialize_message_row(row) for row in rows]
+        return [serialize_message_row(row) for row in rows]
 
     def list_recent_messages(
         self,
@@ -501,7 +483,7 @@ class HistoryService:
             "You write concise chat session titles. "
             "Do not use quotation marks, numbering, or extra commentary."
         )
-        fallback_title = self._fallback_title(first_message)
+        fallback_title_value = fallback_title(first_message)
 
         try:
             raw_title = await ollama_client.generate_answer(
@@ -515,9 +497,9 @@ class HistoryService:
                 timeout=TITLE_GENERATION_TIMEOUT_SECONDS,
             )
         except Exception:
-            title = fallback_title
+            title = fallback_title_value
         else:
-            title = self._sanitize_title(raw_title.response) or fallback_title
+            title = sanitize_title(raw_title.response) or fallback_title_value
 
         if not title:
             return None
@@ -561,7 +543,7 @@ class HistoryService:
             )
         )[0]
         return await asyncio.to_thread(
-            self._query_memory_turns_by_embedding,
+            self._memory_store.query_turns_by_embedding,
             query_embedding=query_embedding,
             session_id=session_id,
             collection_id=collection_id,
@@ -569,91 +551,8 @@ class HistoryService:
             limit=limit,
         )
 
-    def _query_memory_turns_by_embedding(
-        self,
-        *,
-        query_embedding: list[float],
-        session_id: str | None,
-        collection_id: str,
-        user_id: str,
-        limit: int,
-    ) -> list[MemoryTurn]:
-        collection = self._memory_collection()
-        where_filter: dict[str, object]
-        if self._cross_session_memory_enabled:
-            where_filter = {"user_id": user_id}
-        elif session_id:
-            where_filter = {"$and": [{"user_id": user_id}, {"session_id": session_id}]}
-        else:
-            return []
-
-        rows = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=max(limit * 4, 12),
-            where=where_filter,
-            include=["metadatas", "distances"],
-        )
-
-        metadatas = rows.get("metadatas", [[]])[0]
-        distances = rows.get("distances", [[]])[0]
-        memory_turns: list[MemoryTurn] = []
-        for metadata, distance in zip(metadatas, distances, strict=False):
-            if distance is not None and float(distance) > 1.2:
-                continue
-            memory_session_id = str(metadata.get("session_id", ""))
-            memory_collection_id = str(metadata.get("collection_id", "all-pdfs"))
-            if (
-                self._cross_session_memory_enabled
-                and collection_id != "all-pdfs"
-                and memory_session_id != session_id
-                and memory_collection_id not in {collection_id, "all-pdfs"}
-            ):
-                continue
-            if (
-                self._cross_session_memory_enabled
-                and session_id
-                and collection_id != "all-pdfs"
-                and memory_session_id != session_id
-                and memory_collection_id not in {collection_id, "all-pdfs"}
-            ):
-                continue
-
-            user_content = str(metadata.get("user_content", "")).strip()
-            assistant_content = str(metadata.get("assistant_content", "")).strip()
-            if not user_content and not assistant_content:
-                continue
-            memory_turns.append(
-                MemoryTurn(
-                    user_content=user_content,
-                    assistant_content=assistant_content,
-                    session_id=memory_session_id,
-                    collection_id=memory_collection_id,
-                )
-            )
-            if len(memory_turns) >= limit:
-                break
-
-        return memory_turns
-
     def get_memory_stats(self, *, user_id: str) -> dict[str, object]:
-        rows = self._memory_collection().get(where={"user_id": user_id}, include=["metadatas"])
-        metadatas = rows.get("metadatas", [])
-        timestamps = [
-            str(metadata.get("created_at"))
-            for metadata in metadatas
-            if metadata and metadata.get("created_at")
-        ]
-        unique_sessions = {
-            str(metadata.get("session_id"))
-            for metadata in metadatas
-            if metadata and metadata.get("session_id")
-        }
-        return {
-            "totalTurns": len(rows.get("ids", [])),
-            "uniqueSessions": len(unique_sessions),
-            "oldestTimestamp": min(timestamps) if timestamps else None,
-            "newestTimestamp": max(timestamps) if timestamps else None,
-        }
+        return self._memory_store.get_stats(user_id=user_id)
 
     async def _store_memory_turn(
         self,
@@ -670,16 +569,16 @@ class HistoryService:
         memory_text = f"User: {user_content}"
         memory_embedding = (await ollama_client.embed_texts([memory_text]))[0]
         await asyncio.to_thread(
-            self._upsert_memory_turn,
-            memory_id,
-            session_id,
-            collection_id,
-            created_at,
-            user_id,
-            user_content,
-            assistant_content,
-            memory_text,
-            memory_embedding,
+            self._memory_store.upsert_turn,
+            memory_id=memory_id,
+            session_id=session_id,
+            collection_id=collection_id,
+            created_at=created_at,
+            user_id=user_id,
+            user_content=user_content,
+            assistant_content=assistant_content,
+            memory_text=memory_text,
+            memory_embedding=memory_embedding,
         )
 
     def _finalize_memory_index_task(
@@ -698,36 +597,8 @@ class HistoryService:
                 exc_info=True,
             )
 
-    def _upsert_memory_turn(
-        self,
-        memory_id: str,
-        session_id: str,
-        collection_id: str,
-        created_at: str,
-        user_id: str,
-        user_content: str,
-        assistant_content: str,
-        memory_text: str,
-        memory_embedding: list[float],
-    ) -> None:
-        self._memory_collection().upsert(
-            ids=[memory_id],
-            documents=[memory_text],
-            embeddings=[memory_embedding],
-            metadatas=[
-                {
-                    "session_id": session_id,
-                    "user_id": user_id,
-                    "collection_id": collection_id,
-                    "created_at": created_at,
-                    "user_content": user_content,
-                    "assistant_content": assistant_content,
-                }
-            ],
-        )
-
     def _delete_memory_turn(self, memory_id: str) -> None:
-        self._memory_collection().delete(ids=[memory_id])
+        self._memory_store.delete_turn(memory_id)
 
     def _persist_turn_records(
         self,
@@ -751,82 +622,27 @@ class HistoryService:
         assistant_timestamp: str,
         user_id: str,
     ) -> None:
-        with self._database.connect() as connection:
-            connection.execute(
-                """
-                UPDATE sessions
-                SET collection = ?, updated_at = ?
-                WHERE id = ? AND user_id = ?
-                """,
-                (collection_id, assistant_timestamp, session_id, user_id),
-            )
-            connection.executemany(
-                """
-                INSERT INTO messages (
-                    id,
-                    session_id,
-                    role,
-                    content,
-                    user_id,
-                    collection_id,
-                    collection_label,
-                    citations,
-                    answer_trace,
-                    tool_call,
-                    model_thinking,
-                    web_search_requested,
-                    web_search_used,
-                    offline_warning,
-                    thinking_requested,
-                    cross_session_memory_used,
-                    embedding_id,
-                    created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [
-                    (
-                        str(uuid4()),
-                        session_id,
-                        "user",
-                        user_content,
-                        user_id,
-                        collection_id,
-                        collection_label,
-                        json.dumps([]),
-                        json.dumps([]),
-                        None,
-                        None,
-                        int(web_search_requested),
-                        0,
-                        None,
-                        int(thinking_requested),
-                        0,
-                        memory_id,
-                        user_timestamp,
-                    ),
-                    (
-                        str(uuid4()),
-                        session_id,
-                        "assistant",
-                        assistant_content,
-                        user_id,
-                        collection_id,
-                        collection_label,
-                        json.dumps([citation.model_dump(by_alias=True) for citation in citations]),
-                        json.dumps(answer_trace),
-                        json.dumps(tool_call.model_dump()) if tool_call is not None else None,
-                        model_thinking,
-                        int(web_search_requested),
-                        int(web_search_used),
-                        offline_warning,
-                        int(thinking_requested),
-                        int(cross_session_memory_used),
-                        memory_id,
-                        assistant_timestamp,
-                    ),
-                ],
-            )
+        persist_turn_records(
+            database=self._database,
+            session_id=session_id,
+            collection_id=collection_id,
+            collection_label=collection_label,
+            user_content=user_content,
+            assistant_content=assistant_content,
+            citations=citations,
+            answer_trace=answer_trace,
+            tool_call=tool_call,
+            web_search_requested=web_search_requested,
+            web_search_used=web_search_used,
+            offline_warning=offline_warning,
+            model_thinking=model_thinking,
+            thinking_requested=thinking_requested,
+            cross_session_memory_used=cross_session_memory_used,
+            memory_id=memory_id,
+            user_timestamp=user_timestamp,
+            assistant_timestamp=assistant_timestamp,
+            user_id=user_id,
+        )
 
     def _fetch_session_row(self, session_id: str, *, user_id: str):
         with self._database.connect() as connection:
@@ -849,85 +665,3 @@ class HistoryService:
                 """,
                 (session_id,),
             ).fetchone()
-
-    @staticmethod
-    def _sanitize_title(value: str) -> str:
-        cleaned = " ".join(value.replace("\n", " ").strip().strip("\"'").split())
-        if not cleaned:
-            return ""
-        return cleaned[:48]
-
-    @staticmethod
-    def _fallback_title(value: str) -> str:
-        cleaned = " ".join(value.replace("\n", " ").strip().strip("\"'").split())
-        cleaned = cleaned.rstrip(".,:;!?")
-        if not cleaned:
-            return ""
-        if len(cleaned) <= 48:
-            return cleaned
-
-        clipped = cleaned[:48].rstrip()
-        last_space = clipped.rfind(" ")
-        if last_space >= 24:
-            clipped = clipped[:last_space]
-        return clipped.rstrip(" ,;:-")
-
-    def _serialize_session_row(self, row) -> dict[str, str]:
-        updated_at = str(row["updated_at"])
-        return {
-            "id": str(row["id"]),
-            "title": str(row["title"]),
-            "group": _resolve_session_group(updated_at),
-            "collectionId": str(row["collection"]),
-            "updatedAt": updated_at,
-        }
-
-    @staticmethod
-    def _serialize_message_row(row) -> dict[str, object]:
-        raw_citations = json.loads(str(row["citations"])) if row["citations"] else []
-        citations = [CitationPayload.model_validate(item).model_dump(by_alias=True) for item in raw_citations]
-        tool_call = (
-            ToolCallPayload.model_validate(json.loads(str(row["tool_call"]))).model_dump(by_alias=True)
-            if row["tool_call"]
-            else None
-        )
-        stored_trace = json.loads(str(row["answer_trace"])) if row["answer_trace"] else None
-        answer_trace = (
-            stored_trace
-            if isinstance(stored_trace, list)
-            else [
-                step.model_dump(by_alias=True)
-                for step in build_answer_trace(
-                    pdf_context_count=sum(
-                        1
-                        for citation in raw_citations
-                        if str(citation.get("kind", "pdf")) == "pdf"
-                    ),
-                    citations=[CitationPayload.model_validate(item) for item in raw_citations],
-                    cross_session_memory_used=int(row["cross_session_memory_used"] or 0),
-                    collection_id=str(row["collection_id"] or "all-pdfs"),
-                    collection_label=str(row["collection_label"] or "All PDFs"),
-                    tool_call=ToolCallPayload.model_validate(json.loads(str(row["tool_call"]))) if row["tool_call"] else None,
-                    web_search_requested=bool(row["web_search_requested"]),
-                    web_search_used=bool(row["web_search_used"]),
-                    offline_warning=str(row["offline_warning"]) if row["offline_warning"] else None,
-                )
-            ]
-        )
-        return {
-            "id": str(row["id"]),
-            "role": str(row["role"]),
-            "content": str(row["content"]),
-            "citations": citations,
-            "answerTrace": answer_trace,
-            "collectionId": str(row["collection_id"] or "all-pdfs"),
-            "collectionLabel": str(row["collection_label"] or "All PDFs"),
-            "toolCall": tool_call,
-            "webSearchRequested": bool(row["web_search_requested"]),
-            "webSearchUsed": bool(row["web_search_used"]),
-            "offlineWarning": str(row["offline_warning"]) if row["offline_warning"] else None,
-            "crossSessionMemoryUsed": int(row["cross_session_memory_used"] or 0),
-            "modelThinking": str(row["model_thinking"]) if row["model_thinking"] else None,
-            "thinkingRequested": bool(row["thinking_requested"]),
-            "createdAt": str(row["created_at"]),
-        }

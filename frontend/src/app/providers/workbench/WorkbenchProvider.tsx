@@ -1,7 +1,6 @@
 import {
   createContext,
   startTransition,
-  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -11,10 +10,8 @@ import {
 } from "react";
 import { httpWorkbenchGateway, type KnowledgeBaseRecord } from "@/shared/api/httpWorkbench";
 import type {
-  Citation,
   IngestionProgressEvent,
   Message,
-  PdfPreviewRequest,
   PipelineDocument,
   PipelineStatus,
 } from "@/shared/api/types";
@@ -24,14 +21,15 @@ import {
   persistThinkingEnabled,
 } from "./workbenchInitialState";
 import { useStableWorkbenchActions } from "./workbenchActions";
+import { createWorkbenchPipelineActions } from "./workbenchPipelineActions";
+import { createWorkbenchPreviewActions } from "./workbenchPreviewActions";
+import { createWorkbenchSessionActions } from "./workbenchSessionActions";
 import {
   appendMessages,
   buildPendingAnswerTrace,
   normalizeCollectionId,
   replaceMessage,
-  retainKnownSessionMessages,
   resolveCollectionLabel,
-  toPreviewRequest,
   toStatusMap,
   updateMessage,
   updateMessageContent,
@@ -296,74 +294,26 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     };
   }, [activeIngestionSignature, ingestionStreamKey]);
 
-  async function refreshSessions(preferredSessionId?: string) {
-    const sessions = await httpWorkbenchGateway.listSessions();
-    if (sessions.length === 0) {
-      return;
-    }
-
-    setState((previous) => ({
-      ...previous,
-      sessions,
-      messagesBySession: retainKnownSessionMessages(
-        previous.messagesBySession,
-        sessions.map((session) => session.id),
-      ),
-      activeSessionId:
-        preferredSessionId && sessions.some((session) => session.id === preferredSessionId)
-          ? preferredSessionId
-          : previous.activeSessionId && sessions.some((session) => session.id === previous.activeSessionId)
-            ? previous.activeSessionId
-            : sessions[0].id,
-    }));
-  }
-
-  function scheduleSessionTitleRefresh(sessionId: string, attempt = 0) {
-    const maxAttempts = 12;
-    if (attempt >= maxAttempts) {
-      titleSyncTimeoutRef.current.delete(sessionId);
-      return;
-    }
-
-    const existingTimeout = titleSyncTimeoutRef.current.get(sessionId);
-    if (existingTimeout !== undefined) {
-      window.clearTimeout(existingTimeout);
-    }
-
-    const delayMs = attempt === 0 ? 1500 : 3000;
-    const timeoutId = window.setTimeout(() => {
-      void (async () => {
-        try {
-          const sessions = await httpWorkbenchGateway.listSessions();
-          const matchingSession = sessions.find((session) => session.id === sessionId);
-          if (!matchingSession) {
-            titleSyncTimeoutRef.current.delete(sessionId);
-            return;
-          }
-
-          setState((previous) => ({
-            ...previous,
-            sessions,
-            activeSessionId:
-              previous.activeSessionId && sessions.some((session) => session.id === previous.activeSessionId)
-                ? previous.activeSessionId
-                : sessions[0].id,
-          }));
-
-          if (matchingSession.title !== "New chat") {
-            titleSyncTimeoutRef.current.delete(sessionId);
-            return;
-          }
-        } catch {
-          // Keep polling briefly because title generation is asynchronous on the backend.
-        }
-
-        scheduleSessionTitleRefresh(sessionId, attempt + 1);
-      })();
-    }, delayMs);
-
-    titleSyncTimeoutRef.current.set(sessionId, timeoutId);
-  }
+  const { refreshSessions, scheduleSessionTitleRefresh, createSession, selectSession, deleteSession } =
+    createWorkbenchSessionActions({
+      state,
+      setState,
+      titleSyncTimeoutRef,
+      showToast,
+    });
+  const { openPdfPreview, goToPdfPreviewPage, retryPdfPreview, closePdfPreview } = createWorkbenchPreviewActions({
+    state,
+    setState,
+    showToast,
+  });
+  const { uploadDocuments, reclusterTopics, removePipelineDocument } = createWorkbenchPipelineActions({
+    state,
+    setState,
+    showToast,
+    mergeKnowledgeBase,
+    refreshKnowledgeBase,
+    documentStatusRef,
+  });
 
   async function retryBootstrap() {
     setState((previous) => ({
@@ -383,187 +333,6 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         ...previous,
         isBootstrapping: false,
         bootstrapError: httpWorkbenchGateway.resolveErrorMessage(error),
-      }));
-    }
-  }
-
-  async function createSession() {
-    if (state.pendingSessionAction) {
-      return;
-    }
-
-    setState((previous) => ({
-      ...previous,
-      pendingSessionAction: "create",
-      pendingSessionTargetId: null,
-    }));
-
-    try {
-      const requestedCollectionId = normalizeCollectionId(state.collections, state.activeCollectionId);
-      const detail = await httpWorkbenchGateway.createSession(requestedCollectionId);
-      const sessions = await httpWorkbenchGateway.listSessions();
-      const nextCollectionId = normalizeCollectionId(state.collections, detail.collectionId);
-
-      setState((previous) => ({
-        ...previous,
-        sessions,
-        activeSessionId: detail.session.id,
-        activeCollectionId: nextCollectionId,
-        messagesBySession: {
-          ...retainKnownSessionMessages(
-            previous.messagesBySession,
-            sessions.map((session) => session.id),
-          ),
-          [detail.session.id]: detail.messages,
-        },
-        draftMessage: "",
-        pdfPreview: null,
-        pdfPreviewError: null,
-        pdfPreviewRequest: null,
-        isPdfPreviewLoading: false,
-        pendingSessionAction: null,
-        pendingSessionTargetId: null,
-        sidebarOpen: previous.isCompactViewport ? false : previous.sidebarOpen,
-      }));
-    } catch (error) {
-      showToast(httpWorkbenchGateway.resolveErrorMessage(error));
-      setState((previous) => ({
-        ...previous,
-        pendingSessionAction: null,
-        pendingSessionTargetId: null,
-      }));
-    }
-  }
-
-  async function selectSession(sessionId: string) {
-    if (state.pendingSessionAction || sessionId === state.activeSessionId) {
-      return;
-    }
-
-    setState((previous) => ({
-      ...previous,
-      pendingSessionAction: "select",
-      pendingSessionTargetId: sessionId,
-    }));
-
-    try {
-      const detail = await httpWorkbenchGateway.getSession(sessionId);
-      const nextCollectionId = normalizeCollectionId(state.collections, detail.collectionId);
-
-      setState((previous) => ({
-        ...previous,
-        activeSessionId: sessionId,
-        activeCollectionId: nextCollectionId,
-        messagesBySession: {
-          ...previous.messagesBySession,
-          [sessionId]: detail.messages,
-        },
-        draftMessage: "",
-        pdfPreview: null,
-        pdfPreviewError: null,
-        pdfPreviewRequest: null,
-        isPdfPreviewLoading: false,
-        pendingSessionAction: null,
-        pendingSessionTargetId: null,
-        sidebarOpen: previous.isCompactViewport ? false : previous.sidebarOpen,
-      }));
-    } catch (error) {
-      showToast(httpWorkbenchGateway.resolveErrorMessage(error));
-      setState((previous) => ({
-        ...previous,
-        pendingSessionAction: null,
-        pendingSessionTargetId: null,
-      }));
-    }
-  }
-
-  async function deleteSession(sessionId: string) {
-    if (state.pendingSessionAction) {
-      return;
-    }
-
-    setState((previous) => ({
-      ...previous,
-      pendingSessionAction: "delete",
-      pendingSessionTargetId: sessionId,
-    }));
-
-    try {
-      await httpWorkbenchGateway.deleteSession(sessionId);
-      let sessions = await httpWorkbenchGateway.listSessions();
-
-      if (sessions.length === 0) {
-        const detail = await httpWorkbenchGateway.createSession(
-          normalizeCollectionId(state.collections, state.activeCollectionId),
-        );
-        sessions = [detail.session];
-
-        setState((previous) => ({
-          ...previous,
-          sessions,
-          activeSessionId: detail.session.id,
-          activeCollectionId: normalizeCollectionId(previous.collections, detail.collectionId),
-          messagesBySession: {
-            [detail.session.id]: detail.messages,
-          },
-          draftMessage: "",
-          pdfPreview: null,
-          pdfPreviewError: null,
-          pdfPreviewRequest: null,
-          isPdfPreviewLoading: false,
-          pendingSessionAction: null,
-          pendingSessionTargetId: null,
-          sidebarOpen: previous.isCompactViewport ? false : previous.sidebarOpen,
-        }));
-        showToast("Session deleted.");
-        return;
-      }
-
-      const nextSessionId =
-        state.activeSessionId !== sessionId &&
-        sessions.some((session) => session.id === state.activeSessionId)
-          ? state.activeSessionId
-          : sessions[0].id;
-      const shouldLoadNextSession = state.activeSessionId === sessionId || !(nextSessionId in state.messagesBySession);
-      const detail = shouldLoadNextSession
-        ? await httpWorkbenchGateway.getSession(nextSessionId)
-        : null;
-
-      setState((previous) => ({
-        ...previous,
-        sessions,
-        activeSessionId: nextSessionId,
-        activeCollectionId: normalizeCollectionId(
-          previous.collections,
-          detail?.collectionId ?? previous.activeCollectionId,
-        ),
-        messagesBySession: {
-          ...retainKnownSessionMessages(
-            previous.messagesBySession,
-            sessions.map((session) => session.id),
-          ),
-          ...(detail
-            ? {
-                [nextSessionId]: detail.messages,
-              }
-            : {}),
-        },
-        draftMessage: "",
-        pdfPreview: null,
-        pdfPreviewError: null,
-        pdfPreviewRequest: null,
-        isPdfPreviewLoading: false,
-        pendingSessionAction: null,
-        pendingSessionTargetId: null,
-        sidebarOpen: previous.isCompactViewport ? false : previous.sidebarOpen,
-      }));
-      showToast("Session deleted.");
-    } catch (error) {
-      showToast(httpWorkbenchGateway.resolveErrorMessage(error));
-      setState((previous) => ({
-        ...previous,
-        pendingSessionAction: null,
-        pendingSessionTargetId: null,
       }));
     }
   }
@@ -804,135 +573,6 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         ...previous,
         isSendingMessage: false,
       }));
-    }
-  }
-
-  async function loadPdfPreview(request: PdfPreviewRequest, preserveCurrentPreview = false) {
-    setState((previous) => ({
-      ...previous,
-      isPdfPreviewLoading: true,
-      pdfPreviewError: null,
-      pdfPreviewRequest: request,
-      pdfPreview: preserveCurrentPreview ? previous.pdfPreview : null,
-    }));
-
-    try {
-      const preview = await httpWorkbenchGateway.getPdfPreview(request);
-      setState((previous) => ({
-        ...previous,
-        isPdfPreviewLoading: false,
-        pdfPreview: preview,
-        pdfPreviewError: null,
-        pdfPreviewRequest: request,
-      }));
-    } catch (error) {
-      setState((previous) => ({
-        ...previous,
-        isPdfPreviewLoading: false,
-        pdfPreviewError: httpWorkbenchGateway.resolveErrorMessage(error),
-        pdfPreviewRequest: request,
-      }));
-    }
-  }
-
-  async function openPdfPreview(citation: Citation) {
-    try {
-      await loadPdfPreview(toPreviewRequest(citation));
-    } catch (error) {
-      showToast(httpWorkbenchGateway.resolveErrorMessage(error));
-    }
-  }
-
-  async function goToPdfPreviewPage(page: number) {
-    const request = state.pdfPreviewRequest;
-    if (!request || page < 1 || page === request.page) {
-      return;
-    }
-
-    await loadPdfPreview({ ...request, page }, true);
-  }
-
-  async function retryPdfPreview() {
-    if (!state.pdfPreviewRequest) {
-      return;
-    }
-
-    await loadPdfPreview(state.pdfPreviewRequest, Boolean(state.pdfPreview));
-  }
-
-  function closePdfPreview() {
-    setState((previous) => ({
-      ...previous,
-      pdfPreview: null,
-      pdfPreviewError: null,
-      pdfPreviewRequest: null,
-      isPdfPreviewLoading: false,
-    }));
-  }
-
-  async function uploadDocuments(files: File[]) {
-    if (files.length === 0) {
-      return;
-    }
-
-    try {
-      const knowledgeBase = await httpWorkbenchGateway.uploadDocuments(files);
-      documentStatusRef.current = toStatusMap(knowledgeBase.pipelineDocuments);
-      mergeKnowledgeBase(knowledgeBase);
-      showToast(`Queued ${files.length} PDF${files.length === 1 ? "" : "s"} for background indexing.`);
-    } catch (error) {
-      showToast(httpWorkbenchGateway.resolveErrorMessage(error));
-    }
-  }
-
-  async function reclusterTopics() {
-    if (
-      state.isReclustering ||
-      state.knowledgeBaseSummary.indexedDocuments === 0 ||
-      state.knowledgeBaseSummary.indexedChunks === 0
-    ) {
-      showToast("Upload and index at least one PDF before re-clustering topics.");
-      return;
-    }
-
-    setState((previous) => ({
-      ...previous,
-      isReclustering: true,
-    }));
-
-    try {
-      const result = await httpWorkbenchGateway.reclusterTopics();
-      const knowledgeBase = await refreshKnowledgeBase({ announceTransitions: false });
-
-      setState((previous) => ({
-        ...previous,
-        isReclustering: false,
-        collections: knowledgeBase.collections,
-        activeCollectionId: normalizeCollectionId(knowledgeBase.collections, previous.activeCollectionId),
-        pipelineDocuments: knowledgeBase.pipelineDocuments,
-        knowledgeGraph: knowledgeBase.knowledgeGraph,
-        knowledgeBaseSummary: knowledgeBase.knowledgeBaseSummary,
-      }));
-
-      showToast(
-        `Re-clustered ${result.topics.length} topic${result.topics.length === 1 ? "" : "s"} across ${result.documentCount} PDF${result.documentCount === 1 ? "" : "s"}.`,
-      );
-    } catch (error) {
-      setState((previous) => ({
-        ...previous,
-        isReclustering: false,
-      }));
-      showToast(httpWorkbenchGateway.resolveErrorMessage(error));
-    }
-  }
-
-  async function removePipelineDocument(documentId: string) {
-    try {
-      await httpWorkbenchGateway.deleteDocument(documentId);
-      await refreshKnowledgeBase({ announceTransitions: false });
-      showToast("Document removed.");
-    } catch (error) {
-      showToast(httpWorkbenchGateway.resolveErrorMessage(error));
     }
   }
 

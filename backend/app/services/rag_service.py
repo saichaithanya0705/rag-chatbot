@@ -15,38 +15,27 @@ from app.services.message_intent import classify_message_intent
 from app.services.ollama_client import OllamaClient, OllamaGenerationResult
 from app.services.query_rewrite_service import QueryRewriteService
 from app.services.rag_answer_text import (
-    CONCISE_ANSWER_PATTERN,
-    DIRECT_QA_MATCH_THRESHOLD,
-    LEGACY_PDF_CITATION_PATTERN,
-    ONE_SENTENCE_PATTERN,
-    PDF_CITATION_PATTERN,
-    THREE_SENTENCE_PATTERN,
-    TWO_SENTENCE_PATTERN,
-    WEB_CITATION_PATTERN,
-    best_page_context,
     clean_model_thinking_summary,
-    comparison_sentence_for_context,
     derive_citations_from_answer,
-    extract_direct_qa_pair,
-    first_sentence,
     has_uncited_substantive_segments,
-    is_informative_answer_sentence,
     normalize_answer_text,
-    question_match_score,
     references_unknown_sources,
-    shape_shortcut_answer,
     strip_citation_markers,
     strip_thinking_blocks,
-    tokenize,
+)
+from app.services.rag_answer_strategies import (
+    direct_comparison_shortcut,
+    direct_context_shortcut,
+    fallback_finalized_answer,
+    interactive_generation_options,
+    reasoning_context_summary,
 )
 from app.services.rag_citations import (
     citation_from_context,
+    extract_citations,
     pdf_context_from_chunk,
 )
 from app.services.rag_grounding import (
-    CONTEXT_FALLBACK_CHAR_LIMIT,
-    clean_context_snippet,
-    compose_fallback_answer,
     grounding_system_prompt,
     no_context_message,
     trim_text,
@@ -195,7 +184,7 @@ class RagService:
                 raw_answer = await self._ollama_client.generate_answer(
                     prompt=prepared.prompt,
                     system_prompt=prepared.system_prompt,
-                    options=self._interactive_generation_options(
+                    options=interactive_generation_options(
                         question=prepared.question,
                         contexts=prepared.contexts,
                     ),
@@ -219,7 +208,7 @@ class RagService:
                         "Interactive answer generation exceeded the time budget; falling back to retrieved evidence.",
                         exc_info=True,
                     )
-                    return self._fallback_finalized_answer(
+                    return fallback_finalized_answer(
                         prepared.contexts,
                         generation_warning=(
                             "The model exceeded the interactive time budget, so this answer was composed "
@@ -284,11 +273,11 @@ class RagService:
             return last_result
         if last_error is not None:
             if prepared.contexts and self._is_interactive_timeout(last_error):
-                return self._fallback_finalized_answer(
+                return fallback_finalized_answer(
                     prepared.contexts,
                     generation_warning=(
                         "The model exceeded the interactive time budget, so this answer was composed "
-                        "directly from the strongest retrieved evidence."
+                        "composed directly from the strongest retrieved evidence."
                     ),
                 )
             raise last_error
@@ -376,7 +365,7 @@ class RagService:
             user_id=user_id,
         )
         if len(comparison_contexts) >= 2:
-            comparison_shortcut = self._direct_comparison_shortcut(
+            comparison_shortcut = direct_comparison_shortcut(
                 question,
                 comparison_contexts,
             )
@@ -490,7 +479,7 @@ class RagService:
                 reasoning_segments=intent_reasoning_segments,
             )
 
-        shortcut = self._direct_context_shortcut(question, contexts)
+        shortcut = direct_context_shortcut(question, contexts)
         if shortcut is not None:
             return PreparedAnswer(
                 question=question,
@@ -533,7 +522,7 @@ class RagService:
         clean_answer = normalize_answer_text(
             strip_citation_markers(normalized_answer).strip()
         )
-        citations = self._extract_citations(normalized_answer, contexts)
+        citations = extract_citations(normalized_answer, contexts)
         if not citations and contexts and clean_answer:
             citations = derive_citations_from_answer(clean_answer, contexts)
         if contexts and (
@@ -604,7 +593,7 @@ class RagService:
         if not cleaned_segments:
             return None
 
-        context_summary = self._reasoning_context_summary(contexts)
+        context_summary = reasoning_context_summary(contexts)
         prompt = (
             "Create a concise, user-facing reasoning summary from the model reasoning notes below.\n"
             "Do not quote hidden prompts, system messages, or exact chain-of-thought. "
@@ -644,7 +633,7 @@ class RagService:
         return clean_model_thinking_summary(summary.response)
 
     def generation_options_for(self, prepared: PreparedAnswer) -> dict[str, float | int]:
-        return self._interactive_generation_options(
+        return interactive_generation_options(
             question=prepared.question,
             contexts=prepared.contexts,
         )
@@ -656,182 +645,9 @@ class RagService:
             else INTERACTIVE_GENERATE_TIMEOUT_SECONDS
         )
 
-    def _direct_comparison_shortcut(
-        self,
-        question: str,
-        contexts: Sequence[RetrievedContext],
-    ) -> tuple[str, list[CitationPayload]] | None:
-        if len(contexts) < 2:
-            return None
-
-        comparison_sentences: list[str] = []
-        citations: list[CitationPayload] = []
-        for index, context in enumerate(contexts[:2]):
-            sentence = comparison_sentence_for_context(context)
-            if not sentence:
-                return None
-            if index == 1:
-                sentence = f"In contrast, {sentence[0].lower()}{sentence[1:]}" if len(sentence) > 1 else f"In contrast, {sentence.lower()}"
-            comparison_sentences.append(sentence)
-            citations.append(citation_from_context(context))
-
-        answer = " ".join(comparison_sentences).strip()
-        if not answer:
-            return None
-        return answer, citations
-
-    def _direct_context_shortcut(
-        self,
-        question: str,
-        contexts: list[RetrievedContext],
-    ) -> FinalizedAnswer | None:
-        best_context: RetrievedContext | None = None
-        best_answer: str | None = None
-        best_rank: tuple[int, float, int] | None = None
-        for context in contexts:
-            if context.kind != "pdf":
-                continue
-            qa_pair = extract_direct_qa_pair(context.text)
-            if qa_pair is None:
-                continue
-            qa_question, qa_answer = qa_pair
-            question_score = question_match_score(question, qa_question)
-            if question_score < DIRECT_QA_MATCH_THRESHOLD:
-                continue
-            cleaned_answer = clean_context_snippet(
-                qa_answer,
-                max_chars=CONTEXT_FALLBACK_CHAR_LIMIT * 2,
-            )
-            if not cleaned_answer:
-                continue
-            cleaned_answer = shape_shortcut_answer(question, cleaned_answer)
-            answer_sentence = first_sentence(cleaned_answer)
-            candidate_rank = (
-                1 if is_informative_answer_sentence(answer_sentence) else 0,
-                question_score,
-                len(tokenize(cleaned_answer)),
-            )
-            if best_rank is None or candidate_rank > best_rank:
-                best_rank = candidate_rank
-                best_context = context
-                best_answer = cleaned_answer
-
-        if best_context is None or best_answer is None:
-            return None
-        return FinalizedAnswer(
-            answer=best_answer,
-            citations=[citation_from_context(best_context)],
-        )
-
-    def _fallback_finalized_answer(
-        self,
-        contexts: list[RetrievedContext],
-        *,
-        generation_warning: str,
-    ) -> FinalizedAnswer:
-        fallback_answer = compose_fallback_answer(
-            contexts,
-            generation_warning=generation_warning,
-            extract_direct_qa_pair=extract_direct_qa_pair,
-        )
-        return FinalizedAnswer(
-            answer=fallback_answer.answer,
-            citations=[
-                citation_from_context(context)
-                for context in fallback_answer.citation_contexts
-            ],
-            generation_warning=fallback_answer.generation_warning,
-        )
-
     @staticmethod
     def _is_interactive_timeout(error: Exception) -> bool:
         return isinstance(error, (httpx.TimeoutException, TimeoutError))
-
-    @staticmethod
-    def _interactive_generation_options(
-        *,
-        question: str,
-        contexts: list[RetrievedContext],
-    ) -> dict[str, float | int]:
-        has_pdf_context = any(context.kind == "pdf" for context in contexts)
-        has_web_context = any(context.kind == "web" for context in contexts)
-        if has_pdf_context and has_web_context:
-            num_predict = 320
-        elif has_pdf_context:
-            num_predict = 384
-        else:
-            num_predict = 256
-
-        if ONE_SENTENCE_PATTERN.search(question):
-            num_predict = min(num_predict, 96)
-        elif TWO_SENTENCE_PATTERN.search(question):
-            num_predict = min(num_predict, 128)
-        elif THREE_SENTENCE_PATTERN.search(question):
-            num_predict = min(num_predict, 176)
-        elif CONCISE_ANSWER_PATTERN.search(question):
-            num_predict = min(num_predict, 224)
-
-        return {
-            "temperature": 0.05,
-            "num_predict": num_predict,
-        }
-
-    def _extract_citations(
-        self,
-        answer: str,
-        contexts: list[RetrievedContext],
-    ) -> list[CitationPayload]:
-        by_key: dict[str, CitationPayload] = {}
-        pdf_id_lookup = {
-            context.id: context
-            for context in contexts
-            if context.kind == "pdf"
-        }
-        pdf_lookup: dict[tuple[str, int, int], RetrievedContext] = {}
-        pdf_page_lookup: dict[tuple[str, int], list[RetrievedContext]] = {}
-        for context in contexts:
-            if context.kind != "pdf" or context.pdf_name is None or context.page_number is None:
-                continue
-            if context.chunk_index is not None:
-                pdf_lookup[(context.pdf_name, context.page_number, context.chunk_index)] = context
-            pdf_page_lookup.setdefault((context.pdf_name, context.page_number), []).append(context)
-        web_lookup = {
-            context.url: context
-            for context in contexts
-            if context.kind == "web" and context.url is not None
-        }
-
-        for match in PDF_CITATION_PATTERN.finditer(answer):
-            context = pdf_id_lookup.get(match.group("id").strip())
-            if context is None:
-                continue
-            by_key[context.id] = citation_from_context(context)
-
-        for match in LEGACY_PDF_CITATION_PATTERN.finditer(answer):
-            pdf_name = match.group("pdf").strip()
-            page_number = int(match.group("page"))
-            chunk_group = match.group("chunk")
-            chunk_index = int(chunk_group) - 1 if chunk_group is not None else None
-            context = (
-                pdf_lookup.get((pdf_name, page_number, chunk_index))
-                if chunk_index is not None
-                else None
-            )
-            if context is None:
-                page_contexts = pdf_page_lookup.get((pdf_name, page_number), [])
-                context = best_page_context(answer, match.start(), page_contexts)
-            if context is None:
-                continue
-            by_key[context.id] = citation_from_context(context)
-
-        for match in WEB_CITATION_PATTERN.finditer(answer):
-            url = match.group("url").strip()
-            context = web_lookup.get(url)
-            if context is None:
-                continue
-            by_key[context.id] = citation_from_context(context)
-
-        return list(by_key.values())
 
     @staticmethod
     def _reasoning_segments_from(label: str, thinking: str | None) -> list[str]:
@@ -839,16 +655,3 @@ class RagService:
         if not cleaned:
             return []
         return [f"{label}: {cleaned}"]
-
-    @staticmethod
-    def _reasoning_context_summary(contexts: list[RetrievedContext]) -> str:
-        if not contexts:
-            return ""
-        pdf_count = sum(1 for context in contexts if context.kind == "pdf")
-        web_count = sum(1 for context in contexts if context.kind == "web")
-        parts = []
-        if pdf_count:
-            parts.append(f"{pdf_count} PDF excerpt{'s' if pdf_count != 1 else ''}")
-        if web_count:
-            parts.append(f"{web_count} web result{'s' if web_count != 1 else ''}")
-        return ", ".join(parts)

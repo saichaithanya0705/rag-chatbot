@@ -147,3 +147,64 @@ def citation_from_context(context: RetrievedContext) -> CitationPayload:
         title=context.title,
         url=context.url,
     )
+
+
+def extract_citations(answer: str, contexts: list[RetrievedContext]) -> list[CitationPayload]:
+    from app.services.rag_answer_text import (
+        LEGACY_PDF_CITATION_PATTERN,
+        PDF_CITATION_PATTERN,
+        WEB_CITATION_PATTERN,
+        best_page_context,
+    )
+
+    by_key: dict[str, CitationPayload] = {}
+    pdf_id_lookup = {
+        context.id: context
+        for context in contexts
+        if context.kind == "pdf"
+    }
+    pdf_lookup: dict[tuple[str, int, int], RetrievedContext] = {}
+    pdf_page_lookup: dict[tuple[str, int], list[RetrievedContext]] = {}
+    for context in contexts:
+        if context.kind != "pdf" or context.pdf_name is None or context.page_number is None:
+            continue
+        if context.chunk_index is not None:
+            pdf_lookup[(context.pdf_name, context.page_number, context.chunk_index)] = context
+        pdf_page_lookup.setdefault((context.pdf_name, context.page_number), []).append(context)
+    web_lookup = {
+        context.url: context
+        for context in contexts
+        if context.kind == "web" and context.url is not None
+    }
+
+    for match in PDF_CITATION_PATTERN.finditer(answer):
+        context = pdf_id_lookup.get(match.group("id").strip())
+        if context is None:
+            continue
+        by_key[context.id] = citation_from_context(context)
+
+    for match in LEGACY_PDF_CITATION_PATTERN.finditer(answer):
+        pdf_name = match.group("pdf").strip()
+        page_number = int(match.group("page"))
+        chunk_group = match.group("chunk")
+        chunk_index = int(chunk_group) - 1 if chunk_group is not None else None
+        context = (
+            pdf_lookup.get((pdf_name, page_number, chunk_index))
+            if chunk_index is not None
+            else None
+        )
+        if context is None:
+            page_contexts = pdf_page_lookup.get((pdf_name, page_number), [])
+            context = best_page_context(answer, match.start(), page_contexts)
+        if context is None:
+            continue
+        by_key[context.id] = citation_from_context(context)
+
+    for match in WEB_CITATION_PATTERN.finditer(answer):
+        url = match.group("url").strip()
+        context = web_lookup.get(url)
+        if context is None:
+            continue
+        by_key[context.id] = citation_from_context(context)
+
+    return list(by_key.values())
