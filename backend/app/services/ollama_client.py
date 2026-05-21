@@ -29,6 +29,7 @@ class OllamaClient:
         embed_model: str,
         chat_model: str,
         *,
+        expected_embedding_dimensions: int | None = None,
         embed_timeout: float = 300.0,
         generate_timeout: float = 120.0,
         max_embed_concurrency: int = 4,
@@ -38,6 +39,7 @@ class OllamaClient:
         self._base_url = base_url.rstrip("/")
         self._embed_model = embed_model
         self._chat_model = chat_model
+        self._expected_embedding_dimensions = expected_embedding_dimensions
         self._embed_client = httpx.AsyncClient(
             base_url=self._base_url,
             timeout=self._build_timeout(embed_timeout),
@@ -71,7 +73,23 @@ class OllamaClient:
                 client=self._embed_client,
                 timeout=timeout,
             )
-        return response["embeddings"]
+        embeddings = response["embeddings"]
+        self._validate_embedding_dimensions(embeddings)
+        return embeddings
+
+    def _validate_embedding_dimensions(self, embeddings: list[list[float]]) -> None:
+        if self._expected_embedding_dimensions is None:
+            return
+
+        for index, embedding in enumerate(embeddings):
+            actual_dimensions = len(embedding)
+            if actual_dimensions != self._expected_embedding_dimensions:
+                raise ValueError(
+                    "Embedding model returned "
+                    f"{actual_dimensions} dimensions for item {index}, expected "
+                    f"{self._expected_embedding_dimensions}. Check RAG_OLLAMA_EMBED_MODEL "
+                    "and RAG_EMBEDDING_DIMENSIONS."
+                )
 
     async def generate_answer(
         self,

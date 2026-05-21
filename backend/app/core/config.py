@@ -22,6 +22,7 @@ class Settings:
     celery_processed_dir: Path
     ollama_base_url: str
     embed_model: str
+    embedding_dimensions: int
     chat_model: str
     reranker_model: str
     chat_history_collection_name: str
@@ -66,6 +67,17 @@ def _env_bool(name: str, default: str = "false") -> bool:
     return os.getenv(name, default).lower() in {"1", "true", "yes", "on"}
 
 
+def _env_int(name: str, default: str) -> int:
+    raw_value = os.getenv(name, default).strip()
+    try:
+        value = int(raw_value)
+    except ValueError as error:
+        raise ValueError(f"{name} must be an integer.") from error
+    if value <= 0:
+        raise ValueError(f"{name} must be greater than zero.")
+    return value
+
+
 def load_settings() -> Settings:
     backend_root = Path(__file__).resolve().parents[2]
     data_dir = backend_root / "data"
@@ -100,7 +112,8 @@ def load_settings() -> Settings:
         celery_control_dir=celery_control_dir,
         celery_processed_dir=celery_processed_dir,
         ollama_base_url=os.getenv("RAG_OLLAMA_BASE_URL", "http://localhost:11434"),
-        embed_model=os.getenv("RAG_OLLAMA_EMBED_MODEL", "andersc/qwen3-embedding:0.6b"),
+        embed_model=os.getenv("RAG_OLLAMA_EMBED_MODEL", "all-minilm"),
+        embedding_dimensions=_env_int("RAG_EMBEDDING_DIMENSIONS", "384"),
         chat_model=os.getenv("RAG_OLLAMA_CHAT_MODEL", "gemma4:31b-cloud"),
         reranker_model=os.getenv(
             "RAG_RERANKER_MODEL",

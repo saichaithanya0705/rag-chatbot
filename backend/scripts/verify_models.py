@@ -18,6 +18,7 @@ async def main() -> None:
         base_url=settings.ollama_base_url,
         embed_model=settings.embed_model,
         chat_model=settings.chat_model,
+        expected_embedding_dimensions=settings.embedding_dimensions,
     )
 
     embeddings = await client.embed_texts(["Round Robin scheduling"])

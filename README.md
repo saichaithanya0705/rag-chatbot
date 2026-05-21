@@ -169,13 +169,13 @@ Recommended local prerequisites:
 
 The backend defaults are currently:
 
-- embedding model: `andersc/qwen3-embedding:0.6b`
+- embedding model: `all-minilm` (384-dimensional embeddings)
 - chat model: `gemma4:31b-cloud`
 
 Pull them before starting the app:
 
 ```powershell
-ollama pull andersc/qwen3-embedding:0.6b
+ollama pull all-minilm
 ollama pull gemma4:31b-cloud
 ```
 
@@ -335,7 +335,8 @@ Common environment variables:
 | Variable | Purpose | Default |
 |---|---|---|
 | `RAG_OLLAMA_BASE_URL` | Ollama base URL | `http://localhost:11434` |
-| `RAG_OLLAMA_EMBED_MODEL` | embedding model | `andersc/qwen3-embedding:0.6b` |
+| `RAG_OLLAMA_EMBED_MODEL` | embedding model | `all-minilm` |
+| `RAG_EMBEDDING_DIMENSIONS` | expected embedding vector length | `384` |
 | `RAG_OLLAMA_CHAT_MODEL` | chat model | `gemma4:31b-cloud` |
 | `RAG_RERANKER_MODEL` | reranker model | `cross-encoder/ms-marco-MiniLM-L6-v2` |
 | `RAG_ENABLE_CROSS_SESSION_MEMORY` | enable cross-session memory | `true` |

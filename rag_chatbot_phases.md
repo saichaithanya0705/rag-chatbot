@@ -18,11 +18,11 @@ Phase 1 alone is a functional chatbot. Each subsequent phase upgrades it without
 
 ### Backend
 - FastAPI project scaffold (`main.py`, `routers/`, `services/`)
-- Ollama integration — confirm qwen3:0.6b and 4B LLM are callable
+- Ollama integration — confirm all-minilm embeddings and 4B LLM are callable
 - **Ingestion (simplified):**
   - PyMuPDF parse with header/footer strip (Stage 1)
   - Recursive character splitting as placeholder — semantic chunking comes in Phase 2
-  - Embed chunks with qwen3:0.6b → store in a **single flat ChromaDB collection** (no topics yet)
+  - Embed chunks with all-minilm 384-dimensional vectors → store in a **single flat ChromaDB collection** (no topics yet)
   - Attach metadata: `{pdf_name, page_number, chunk_index}`
 - **Query (simplified):**
   - Embed query → vector search only (no BM25, no KG, no reranker)
@@ -59,7 +59,7 @@ You can upload a PDF via a script (not UI), ask a question via the frontend, and
   - Sliding window: inject last 3 turns into prompt
   - Session auto-title: LLM title generation as background task after first message
 - **Ingestion upgrade:**
-  - Replace recursive splitting with **semantic chunking** (qwen3:0.6b, threshold=0.75)
+  - Replace recursive splitting with **semantic chunking** (all-minilm, threshold=0.75)
   - Add **KeyBERT** keyword extraction (top 5 per chunk)
   - Store keywords in chunk metadata
 
@@ -302,4 +302,3 @@ can be executed in parallel across frontend and backend tracks.
 Phase 3 is the hardest. HDBSCAN can produce noisy clusters on small datasets — plan to
 spend time tuning `min_cluster_size` and `min_samples` parameters. Start with
 `min_cluster_size=3, min_samples=2` and adjust based on how many PDFs you have indexed.
-

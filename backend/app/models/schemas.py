@@ -9,6 +9,7 @@ class HealthResponse(BaseModel):
     status: str
     ollama_base_url: str
     embed_model: str
+    embedding_dimensions: int = Field(alias="embeddingDimensions")
     chat_model: str
     collection_name: str
     indexed_chunks: int

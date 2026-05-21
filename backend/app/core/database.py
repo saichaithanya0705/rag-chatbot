@@ -2,8 +2,16 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Iterator
+
+
+@dataclass(frozen=True)
+class EmbeddingIndexState:
+    model: str
+    dimensions: int
 
 
 class Database:
@@ -89,6 +97,13 @@ class Database:
                     version INTEGER NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS embedding_index_state (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    model TEXT NOT NULL,
+                    dimensions INTEGER NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS retrieval_chunks (
                     chunk_id TEXT PRIMARY KEY,
                     document_id TEXT NOT NULL,
@@ -99,6 +114,15 @@ class Database:
                     collection_id TEXT,
                     is_indexed INTEGER NOT NULL DEFAULT 0,
                     text TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS topic_projection_journal (
+                    run_id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    rollback_payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
                 );
 
                 CREATE VIRTUAL TABLE IF NOT EXISTS retrieval_chunks_fts
@@ -266,6 +290,130 @@ class Database:
                 ON retrieval_chunks(document_id, user_id)
                 """
             )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_topic_projection_journal_status
+                ON topic_projection_journal(status, updated_at)
+                """
+            )
+
+    def get_embedding_index_state(self) -> EmbeddingIndexState | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT model, dimensions
+                FROM embedding_index_state
+                WHERE id = 1
+                """
+            ).fetchone()
+
+        if row is None:
+            return None
+        return EmbeddingIndexState(
+            model=str(row["model"]),
+            dimensions=int(row["dimensions"]),
+        )
+
+    def set_embedding_index_state(self, *, model: str, dimensions: int) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO embedding_index_state (id, model, dimensions, updated_at)
+                VALUES (1, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    model = excluded.model,
+                    dimensions = excluded.dimensions,
+                    updated_at = excluded.updated_at
+                """,
+                (model, dimensions, self._utc_now_iso()),
+            )
+
+    def has_embedding_backed_state(self) -> bool:
+        with self.connect() as connection:
+            chunk_row = connection.execute(
+                "SELECT 1 FROM retrieval_chunks LIMIT 1"
+            ).fetchone()
+            if chunk_row is not None:
+                return True
+
+            memory_row = connection.execute(
+                """
+                SELECT 1
+                FROM messages
+                WHERE embedding_id IS NOT NULL
+                LIMIT 1
+                """
+            ).fetchone()
+            if memory_row is not None:
+                return True
+
+            document_row = connection.execute(
+                """
+                SELECT 1
+                FROM ingested_documents
+                WHERE status IN ('embedding', 'clustering', 'finalizing', 'indexed')
+                    OR page_count > 0
+                    OR chunk_count > 0
+                LIMIT 1
+                """
+            ).fetchone()
+        return document_row is not None
+
+    def reset_embedding_backed_state(self) -> None:
+        timestamp = self._utc_now_iso()
+        with self.connect() as connection:
+            if self._table_exists(connection, "topic_projection_journal"):
+                connection.execute("DELETE FROM topic_projection_journal")
+            connection.execute("DELETE FROM topic_overrides")
+            connection.execute("DELETE FROM ingested_pages")
+            connection.execute("DELETE FROM retrieval_chunks")
+            connection.execute(
+                """
+                UPDATE ingested_documents
+                SET status = 'queued',
+                    progress = 0,
+                    page_count = 0,
+                    chunk_count = 0,
+                    error_message = NULL,
+                    chunking_threshold = NULL,
+                    updated_at = ?
+                WHERE status <> 'error'
+                """,
+                (timestamp,),
+            )
+            connection.execute(
+                """
+                UPDATE messages
+                SET embedding_id = NULL
+                WHERE embedding_id IS NOT NULL
+                """
+            )
+            connection.execute(
+                """
+                UPDATE retrieval_corpus_state
+                SET version = version + 1
+                WHERE id = 1
+                """
+            )
+            connection.execute(
+                "INSERT INTO retrieval_chunks_fts(retrieval_chunks_fts) VALUES ('rebuild')"
+            )
+
+    @staticmethod
+    def _utc_now_iso() -> str:
+        return datetime.now(UTC).isoformat()
+
+    @staticmethod
+    def _table_exists(connection: sqlite3.Connection, table_name: str) -> bool:
+        row = connection.execute(
+            """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'table' AND name = ?
+            """,
+            (table_name,),
+        ).fetchone()
+        return row is not None
 
     @staticmethod
     def _ensure_column(

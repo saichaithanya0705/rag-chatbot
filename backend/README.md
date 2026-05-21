@@ -40,13 +40,14 @@ On first PDF ingestion, Docling downloads its layout/table/OCR artifacts into `d
 
 The backend defaults are configured for the models currently installed on this machine:
 
-- Embedding model: `andersc/qwen3-embedding:0.6b`
-- Chat model: `qwen3.5:4b-q4_K_M`
+- Embedding model: `all-minilm` (384-dimensional embeddings)
+- Chat model: `gemma4:31b-cloud`
 
 You can override them with environment variables:
 
 - `RAG_OLLAMA_BASE_URL`
 - `RAG_OLLAMA_EMBED_MODEL`
+- `RAG_EMBEDDING_DIMENSIONS`
 - `RAG_OLLAMA_CHAT_MODEL`
 - `RAG_DOCLING_ARTIFACTS_DIR`
 - `RAG_DOCLING_OCR`

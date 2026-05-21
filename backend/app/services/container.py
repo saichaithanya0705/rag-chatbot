@@ -8,6 +8,7 @@ from app.core.database import Database
 from app.services.docling_parser import DoclingDocumentParser
 from app.services.document_preview_service import DocumentPreviewService
 from app.services.document_service import DocumentService
+from app.services.embedding_index_service import EmbeddingIndexService
 from app.services.history_service import HistoryService
 from app.services.ingestion_dispatcher import IngestionDispatcher
 from app.services.ingestion_service import IngestionService
@@ -53,10 +54,18 @@ def build_container(settings: Settings) -> ServiceContainer:
     database.initialize()
 
     chroma_store = ChromaStore(str(settings.chroma_path))
+    EmbeddingIndexService(
+        database=database,
+        chroma_store=chroma_store,
+        kg_path=settings.kg_path,
+        model=settings.embed_model,
+        dimensions=settings.embedding_dimensions,
+    ).reconcile()
     ollama_client = OllamaClient(
         base_url=settings.ollama_base_url,
         embed_model=settings.embed_model,
         chat_model=settings.chat_model,
+        expected_embedding_dimensions=settings.embedding_dimensions,
     )
     document_service = DocumentService(database=database, chroma_store=chroma_store)
     document_preview_service = DocumentPreviewService(document_service)

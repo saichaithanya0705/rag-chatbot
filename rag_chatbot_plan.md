@@ -5,7 +5,7 @@ A fully offline-first, local RAG-based chatbot for learning purposes.
 Upload PDFs → auto-index into topic-based vector store → chat with your notes.
 Optional web search (auto-fallback when PDFs don't have the answer).
 
-**Core stack:** FastAPI · React · Ollama (4B LLM + qwen3:0.6b embeddings) · ChromaDB · SQLite · NetworkX
+**Core stack:** FastAPI · React · Ollama (4B LLM + all-minilm 384-dimensional embeddings) · ChromaDB · SQLite · NetworkX
 
 ---
 
@@ -16,7 +16,7 @@ Optional web search (auto-fallback when PDFs don't have the answer).
 |---|---|
 | Frontend | Chat UI · PDF viewer panel · Pipeline UI · KG visualizer · Web search toggle |
 | Backend | Query handler · Ingestion handler · History manager · KG manager |
-| AI | Ollama (4B LLM + qwen3:0.6b embeddings) · Cross-encoder reranker · Web search (DuckDuckGo/Brave) |
+| AI | Ollama (4B LLM + all-minilm 384-dimensional embeddings) · Cross-encoder reranker · Web search (DuckDuckGo/Brave) |
 | Storage | ChromaDB (per-topic collections + flat chat_history collection) · NetworkX KG (in-memory + pickle) · SQLite (sessions + messages + ingestion status + topic overrides) |
 
 ### Two pipelines
@@ -104,7 +104,7 @@ Split where cosine similarity between adjacent sentences drops below threshold.
 
 ```python
 def semantic_chunk(sentences, threshold=0.75):
-    embeddings = [ollama.embed("qwen3:0.6b", s) for s in sentences]
+    embeddings = [ollama.embed("all-minilm", s) for s in sentences]
     chunks, current = [], [sentences[0]]
     for i in range(1, len(sentences)):
         sim = cosine_similarity(embeddings[i-1], embeddings[i])
@@ -123,7 +123,7 @@ def semantic_chunk(sentences, threshold=0.75):
 
 ### Stage 3 — Keyword Extraction
 
-**v1:** KeyBERT with qwen3:0.6b backbone. Top **5 keyphrases** per chunk.
+**v1:** KeyBERT with all-minilm embedding backbone. Top **5 keyphrases** per chunk.
 Stored as `{..., "keywords": ["scheduling", "round robin", ...]}` in chunk metadata.
 
 **v2 (planned):** LLM-based tagging via 4B model prompt:
@@ -133,7 +133,7 @@ Stored as `{..., "keywords": ["scheduling", "round robin", ...]}` in chunk metad
 
 ### Stage 4 — Embedding & Staging
 
-Embed each chunk (qwen3:0.6b). Store in flat ChromaDB **staging collection** with full metadata.
+Embed each chunk (all-minilm, 384 dimensions). Store in flat ChromaDB **staging collection** with full metadata.
 Topic labels assigned after clustering in Stage 5.
 
 ---
@@ -171,7 +171,7 @@ Emit event → UI: Indexed status + topic chips + chunk count + toast
 ```
 PDF upload
   → Stage 1: PyMuPDF parse + strip headers/footers (y-coord, top/bottom 8%)
-  → Stage 2: Sentence tokenize → semantic chunk (qwen3:0.6b, threshold=0.75)
+  → Stage 2: Sentence tokenize → semantic chunk (all-minilm, threshold=0.75)
   → Stage 3: KeyBERT keyword extraction (top 5 per chunk)
   → Stage 4: Embed chunks → store in ChromaDB staging collection
   → Stage 5: HDBSCAN re-cluster → topic labels → per-topic ChromaDB collections
@@ -191,7 +191,7 @@ Lowercase + strip for v1.
 
 ### Stage 2 — Topic Routing via KG
 
-1. Embed query (qwen3:0.6b) → query vector
+1. Embed query (all-minilm, 384 dimensions) → query vector
 2. Score against all topic centroid embeddings → **top-3 topics**
 3. KG expand: 1-hop neighbors, edge weight > 0.4, capped at **6 collections max**
 

@@ -25,5 +25,12 @@ class ChromaStore:
     def list_collection_names(self) -> list[str]:
         return [collection.name for collection in self._client.list_collections()]
 
+    def has_collections(self) -> bool:
+        return bool(self.list_collection_names())
+
     def delete_collection(self, name: str) -> None:
         self._client.delete_collection(name=name)
+
+    def reset(self) -> None:
+        for collection_name in self.list_collection_names():
+            self.delete_collection(collection_name)

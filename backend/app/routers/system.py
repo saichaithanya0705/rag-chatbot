@@ -19,6 +19,7 @@ def health(
         status="ok",
         ollama_base_url=container.settings.ollama_base_url,
         embed_model=container.settings.embed_model,
+        embeddingDimensions=container.settings.embedding_dimensions,
         chat_model=container.settings.chat_model,
         collection_name="all_chunks",
         indexed_chunks=indexed_chunks,
