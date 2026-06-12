@@ -105,6 +105,10 @@ Important context: the bundled Graphify triage scanner reported `86/100` severe 
 - Local parser capability timing after repair: `fallback True 0.002`, `ocr True 0.001`, `is_available True 0.0`.
 - `npm run build` in `frontend/`
   - Result: production build passed after the liveness/readiness fix.
+- Hosted Render smoke test:
+  - Result: `/api/system/live`, `/api/system/ready`, `/api/system/health`, `/api/documents`, `/api/topics`, `/api/kg/graph`, and `/api/sessions` all returned `200`.
+- Hosted Netlify smoke test:
+  - Result: `https://rag-chatbot-portfolio-0612.netlify.app/chat` rendered the workspace; Playwright observed bootstrap calls to Render returning `200` for readiness, health, documents, topics, graph, sessions, and session creation.
 
 Residual risk:
-- Hosted Render/Netlify verification remains pending until the latest startup fixes are redeployed and exercised against the live URLs.
+- Render free-tier instances can still sleep after inactivity, so the first request after a long idle period may be slower, but the frontend now waits for readiness instead of showing a permanent workspace-load failure.
