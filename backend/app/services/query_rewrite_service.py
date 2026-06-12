@@ -3,12 +3,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from app.services.conversation_context import looks_context_dependent
-from app.services.ollama_client import OllamaClient
+from app.services.nvidia_client import NvidiaClient
 
 
 class QueryRewriteService:
-    def __init__(self, *, ollama_client: OllamaClient) -> None:
-        self._ollama_client = ollama_client
+    def __init__(self, *, nvidia_client: NvidiaClient) -> None:
+        self._nvidia_client = nvidia_client
 
     async def rewrite_query(
         self,
@@ -44,7 +44,7 @@ class QueryRewriteService:
         )
 
         try:
-            rewritten = await self._ollama_client.generate_answer(
+            rewritten = await self._nvidia_client.generate_answer(
                 prompt=prompt,
                 system_prompt=system_prompt,
                 options={

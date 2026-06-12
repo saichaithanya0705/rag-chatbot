@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import TextIO
 
 from app.core.config import Settings, ensure_runtime_directories
 
@@ -16,8 +17,8 @@ class CeleryWorkerSupervisor:
         self._settings = settings
         self._process: subprocess.Popen[str] | None = None
         self._owns_process = False
-        self._stdout_handle = None
-        self._stderr_handle = None
+        self._stdout_handle: TextIO | None = None
+        self._stderr_handle: TextIO | None = None
         self._pid_path = settings.celery_root / "worker.pid"
         self._stdout_log_path = settings.celery_root / "worker.out.log"
         self._stderr_log_path = settings.celery_root / "worker.err.log"
@@ -122,11 +123,12 @@ class CeleryWorkerSupervisor:
         self._pid_path.unlink(missing_ok=True)
 
     def _close_log_handles(self) -> None:
-        for handle_name in ("_stdout_handle", "_stderr_handle"):
-            handle = getattr(self, handle_name)
-            if handle is not None:
-                handle.close()
-                setattr(self, handle_name, None)
+        if self._stdout_handle is not None:
+            self._stdout_handle.close()
+            self._stdout_handle = None
+        if self._stderr_handle is not None:
+            self._stderr_handle.close()
+            self._stderr_handle = None
 
     @staticmethod
     def _is_process_alive(pid: int) -> bool:

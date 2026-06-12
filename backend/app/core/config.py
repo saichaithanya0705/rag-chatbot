@@ -3,6 +3,9 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
 
 
 @dataclass(frozen=True)
@@ -20,7 +23,8 @@ class Settings:
     celery_reply_dir: Path
     celery_control_dir: Path
     celery_processed_dir: Path
-    ollama_base_url: str
+    nvidia_base_url: str
+    nvidia_api_key: str
     embed_model: str
     embedding_dimensions: int
     chat_model: str
@@ -78,9 +82,20 @@ def _env_int(name: str, default: str) -> int:
     return value
 
 
+def _env_path(name: str) -> Path | None:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return None
+
+    candidate = raw_value.strip()
+    if not candidate:
+        return None
+    return Path(candidate).expanduser()
+
+
 def load_settings() -> Settings:
     backend_root = Path(__file__).resolve().parents[2]
-    data_dir = backend_root / "data"
+    data_dir = _env_path("RAG_DATA_DIR") or (backend_root / "data")
     uploads_dir = data_dir / "uploads"
     sqlite_path = data_dir / "app.db"
     chroma_path = data_dir / "chroma"
@@ -90,12 +105,7 @@ def load_settings() -> Settings:
     celery_reply_dir = celery_root / "reply"
     celery_control_dir = celery_root / "control"
     celery_processed_dir = celery_root / "processed"
-    raw_docling_artifacts_dir = os.getenv("RAG_DOCLING_ARTIFACTS_DIR")
-    docling_artifacts_dir = (
-        Path(raw_docling_artifacts_dir).expanduser()
-        if raw_docling_artifacts_dir
-        else data_dir / "docling-models"
-    )
+    docling_artifacts_dir = _env_path("RAG_DOCLING_ARTIFACTS_DIR") or (data_dir / "docling-models")
 
     return Settings(
         project_name="Local RAG Chat Backend",
@@ -111,13 +121,14 @@ def load_settings() -> Settings:
         celery_reply_dir=celery_reply_dir,
         celery_control_dir=celery_control_dir,
         celery_processed_dir=celery_processed_dir,
-        ollama_base_url=os.getenv("RAG_OLLAMA_BASE_URL", "http://localhost:11434"),
-        embed_model=os.getenv("RAG_OLLAMA_EMBED_MODEL", "all-minilm"),
+        nvidia_base_url=os.getenv("RAG_NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+        nvidia_api_key=os.getenv("RAG_NVIDIA_API_KEY", ""),
+        embed_model=os.getenv("RAG_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2"),
         embedding_dimensions=_env_int("RAG_EMBEDDING_DIMENSIONS", "384"),
-        chat_model=os.getenv("RAG_OLLAMA_CHAT_MODEL", "gemma4:31b-cloud"),
+        chat_model=os.getenv("RAG_NVIDIA_CHAT_MODEL", "meta/llama-3.2-11b-vision-instruct"),
         reranker_model=os.getenv(
             "RAG_RERANKER_MODEL",
-            "cross-encoder/ms-marco-MiniLM-L6-v2",
+            "nvidia/nv-rerankqa-mistral-4b-v3",
         ),
         chat_history_collection_name=os.getenv(
             "RAG_CHAT_HISTORY_COLLECTION",

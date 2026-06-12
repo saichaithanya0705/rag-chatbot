@@ -73,21 +73,27 @@
   line-height: 1.4;
 }
 
-.sidebarCloseButton {
-  min-height: 32px;
-  padding: 0 10px;
+.collapseSidebarBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
   border: 0.5px solid var(--border-soft);
-  border-radius: 8px;
   background: var(--surface-base);
-  color: var(--text-muted);
-  font-size: var(--font-sm);
+  color: var(--text-subtle-aa);
   cursor: pointer;
   flex-shrink: 0;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-soft);
 }
 
-.sidebarCloseButton:hover {
+.collapseSidebarBtn:hover {
   background: var(--surface-soft);
   color: var(--text-strong);
+  border-color: var(--border-strong);
+  transform: scale(1.02);
 }
 
 .newChatBtn {
@@ -104,10 +110,20 @@
   align-items: center;
   gap: 8px;
   white-space: nowrap;
+  box-shadow: var(--shadow-soft);
+  transition: all var(--transition-fast);
 }
 
 .newChatBtn:hover {
   background: var(--surface-soft);
+  border-color: var(--accent-border);
+  color: var(--accent-ink);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.newChatBtn:active {
+  transform: translateY(0);
 }
 
 .newChatBtn:disabled {
@@ -125,13 +141,14 @@
   flex: 1;
   overflow-y: auto;
   padding: 8px 0 16px;
-  mask-image: linear-gradient(to bottom, black 90%, transparent);
 }
 
 .dateGroup {
-  padding: 6px 14px 2px;
-  font-size: var(--font-xs);
-  font-weight: 500;
+  padding: 10px 16px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
   color: var(--text-subtle-aa);
 }
 
@@ -139,13 +156,18 @@
   position: relative;
   display: flex;
   align-items: center;
+  margin: 2px 8px;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: background-color var(--transition-fast);
 }
 
 .session {
   box-sizing: border-box;
   width: 100%;
   min-height: 38px;
-  padding: 9px 42px 9px 14px;
+  padding: 9px 40px 9px 12px;
+  border-radius: 8px;
   cursor: pointer;
   font-size: var(--font-base);
   color: var(--text-muted);
@@ -153,6 +175,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  transition: all var(--transition-fast);
 }
 
 .sessionTitle {
@@ -165,11 +190,14 @@
 .sessionIcon {
   color: var(--text-subtle-aa);
   flex-shrink: 0;
+  transition: color var(--transition-fast);
 }
 
 .session:hover {
   background: var(--surface-base);
   color: var(--text-strong);
+  border-color: var(--border-soft);
+  box-shadow: var(--shadow-soft);
 }
 
 .session:disabled {
@@ -180,35 +208,40 @@
   outline: none;
   background: var(--surface-base);
   color: var(--text-strong);
-  box-shadow: inset 0 0 0 1px rgba(127, 119, 221, 0.18);
+  box-shadow: 0 0 0 2px rgba(127, 119, 221, 0.16);
 }
 
 .sessionActive {
   background: var(--surface-base);
-  color: var(--text-strong);
-  font-weight: 500;
-  border-left: 3px solid var(--accent);
-  padding-left: 11px;
+  color: var(--accent-ink);
+  font-weight: 600;
+  border-color: var(--accent-border);
+  box-shadow: var(--shadow-soft);
 }
+
 .sessionActive .sessionIcon {
   color: var(--accent);
 }
 
 .sessionDelete {
   position: absolute;
-  right: 8px;
+  right: 10px;
   top: 50%;
   transform: translateY(-50%);
   border: none;
   background: none;
-  color: var(--border-strong);
-  font-size: 14px;
+  color: var(--text-subtle-aa);
+  font-size: 16px;
   line-height: 1;
   cursor: pointer;
   opacity: 0;
-  transition:
-    opacity 0.15s ease,
-    color 0.15s ease;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all var(--transition-fast);
 }
 
 .sessionRow:hover .sessionDelete,
@@ -217,7 +250,8 @@
 }
 
 .sessionDelete:hover {
-  color: var(--danger);
+  color: #ffffff;
+  background: var(--danger);
 }
 
 .sessionDelete:disabled {
@@ -229,18 +263,23 @@
 }
 
 .sessionDeletePending {
-  background: rgba(195, 84, 84, 0.08);
+  background: rgba(226, 75, 74, 0.05);
+  border-color: rgba(226, 75, 74, 0.2);
 }
 
 .sessionDeletePendingButton {
   opacity: 1;
   width: auto;
-  min-height: 28px;
-  padding: 0 8px;
-  border-radius: 8px;
-  background: rgba(195, 84, 84, 0.12);
-  color: var(--danger);
-  font-size: 11px;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: var(--danger) !important;
+  color: #ffffff !important;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  box-shadow: 0 2px 6px rgba(226, 75, 74, 0.24);
+  right: 8px;
 }
 
 @media (max-width: 960px) {

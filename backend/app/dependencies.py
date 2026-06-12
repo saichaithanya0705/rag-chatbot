@@ -12,6 +12,10 @@ def get_container(request: Request) -> ServiceContainer:
 def get_user_id(request: Request) -> str:
     user_id = request.headers.get("x-user-id", "").strip()
     if not user_id:
+        user_id = request.query_params.get("userId", "").strip()
+    if not user_id:
+        user_id = request.query_params.get("x-user-id", "").strip()
+    if not user_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The x-user-id header is required.",
@@ -22,3 +26,4 @@ def get_user_id(request: Request) -> str:
             detail="The x-user-id header is too long.",
         )
     return user_id
+

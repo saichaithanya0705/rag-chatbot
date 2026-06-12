@@ -134,7 +134,7 @@ async def upload_documents(
             stored_path = container.settings.uploads_dir / f"{document_id}-{filename}"
             try:
                 await _store_upload_file(upload, stored_path)
-            except Exception as error:
+            except OSError as error:
                 stored_path.unlink(missing_ok=True)
                 raise HTTPException(status_code=400, detail=f"Could not read {filename}.") from error
 
@@ -146,7 +146,7 @@ async def upload_documents(
                     user_id=user_id,
                 )
                 created_document_ids.append(document_id)
-            except Exception as error:
+            except ValueError as error:
                 stored_path.unlink(missing_ok=True)
                 raise HTTPException(status_code=409, detail=str(error)) from error
 
@@ -157,7 +157,7 @@ async def upload_documents(
                     pdf_name=filename,
                     user_id=user_id,
                 )
-            except Exception as error:
+            except RuntimeError as error:
                 raise HTTPException(
                     status_code=503,
                     detail=f"Could not queue indexing for {filename}.",

@@ -175,6 +175,10 @@ interface StreamHandlers {
   onTool: (toolCall: ToolCallApiResponse, offlineWarning?: string | null) => void;
 }
 
+interface StreamRequestOptions {
+  signal?: AbortSignal;
+}
+
 interface IngestionProgressApiResponse {
   documentId: string;
   status: PipelineDocument["status"];
@@ -259,6 +263,14 @@ function resolveErrorMessage(error: unknown) {
   }
 
   return "The backend request failed.";
+}
+
+function isAbortError(error: unknown) {
+  if (typeof DOMException !== "undefined" && error instanceof DOMException) {
+    return error.name === "AbortError";
+  }
+
+  return error instanceof Error && error.name === "AbortError";
 }
 
 function getClientUserId() {
@@ -469,9 +481,10 @@ export const httpWorkbenchGateway = {
   },
 
   async bootstrap(): Promise<BootstrapPayload> {
-    const [knowledgeBase, existingSessions] = await Promise.all([
+    const [knowledgeBase, existingSessions, health] = await Promise.all([
       this.loadKnowledgeBase(),
       requestJson<SessionSummaryApiResponse[]>("/api/sessions"),
+      requestJson<{ thinkingSupported: boolean }>("/api/system/health"),
     ]);
 
     let activeSessionDetail: SessionDetailRecord;
@@ -506,6 +519,7 @@ export const httpWorkbenchGateway = {
       pipelineDocuments: knowledgeBase.pipelineDocuments,
       knowledgeGraph: knowledgeBase.knowledgeGraph,
       knowledgeBaseSummary: knowledgeBase.knowledgeBaseSummary,
+      thinkingSupported: health.thinkingSupported,
     };
   },
 
@@ -632,18 +646,25 @@ export const httpWorkbenchGateway = {
     };
   },
 
-  async streamMessage(input: SendMessageInput, handlers: StreamHandlers): Promise<StreamMessageResult> {
+  async streamMessage(
+    input: SendMessageInput,
+    handlers: StreamHandlers,
+    options?: StreamRequestOptions,
+  ): Promise<StreamMessageResult> {
     const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
       method: "POST",
       headers: buildHeaders({
         "Content-Type": "application/json",
       }),
+      signal: options?.signal,
       body: JSON.stringify({
         message: input.text,
         collectionId: input.collectionId,
         sessionId: input.sessionId,
         webSearchEnabled: Boolean(input.webSearchEnabled),
         thinkingEnabled: Boolean(input.thinkingEnabled),
+        responseLength: input.responseLength,
+        images: input.images,
       }),
     });
 
@@ -766,4 +787,5 @@ export const httpWorkbenchGateway = {
   },
 
   resolveErrorMessage,
+  isAbortError,
 };

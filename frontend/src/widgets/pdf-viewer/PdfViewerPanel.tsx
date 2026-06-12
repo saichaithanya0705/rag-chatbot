@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkbench } from "@/app/providers/workbench/WorkbenchProvider";
 import { cn } from "@/shared/lib/cn";
 import styles from "./pdf-viewer.module.css";
@@ -25,6 +25,50 @@ function formatPreviewExcerpt(excerpt: string | undefined) {
   return cleaned || null;
 }
 
+function parsePreviewHtml(htmlContent: string) {
+  if (typeof DOMParser === "undefined") {
+    return htmlContent;
+  }
+
+  const parser = new DOMParser();
+  const parsed = parser.parseFromString(`<div>${htmlContent}</div>`, "text/html");
+  const root = parsed.body.firstElementChild;
+  if (!root) {
+    return htmlContent;
+  }
+
+  let nextKey = 0;
+  const renderNode = (node: ChildNode): React.ReactNode => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return node.textContent;
+    }
+
+    if (!(node instanceof HTMLElement)) {
+      return null;
+    }
+
+    if (node.tagName === "BR") {
+      const key = `br-${nextKey}`;
+      nextKey += 1;
+      return <br key={key} />;
+    }
+
+    if (node.tagName === "SPAN" && node.classList.length === 1 && node.classList.contains("pdf-highlight")) {
+      const key = `hl-${nextKey}`;
+      nextKey += 1;
+      return (
+        <span key={key} className="pdf-highlight">
+          {Array.from(node.childNodes).map((child) => renderNode(child))}
+        </span>
+      );
+    }
+
+    return node.textContent ?? "";
+  };
+
+  return Array.from(root.childNodes).map((child) => renderNode(child));
+}
+
 const PANEL_WIDTH_KEY = "local-rag-chat/pdf-panel-width";
 
 export function PdfViewerPanel({ open }: PdfViewerPanelProps) {
@@ -34,9 +78,9 @@ export function PdfViewerPanel({ open }: PdfViewerPanelProps) {
   const [width, setWidth] = useState(() => {
     try {
       const stored = sessionStorage.getItem(PANEL_WIDTH_KEY);
-      return stored ? clampWidth(Number(stored)) : 280;
+      return stored ? clampWidth(Number(stored)) : 420;
     } catch {
-      return 280;
+      return 420;
     }
   });
   const dragging = useRef(false);
@@ -46,12 +90,13 @@ export function PdfViewerPanel({ open }: PdfViewerPanelProps) {
   const isModalDialog = state.isCompactViewport && open;
 
   function clampWidth(nextWidth: number) {
-    return Math.min(500, Math.max(240, nextWidth));
+    return Math.min(800, Math.max(320, nextWidth));
   }
 
   function resizeWidth(delta: number) {
     setWidth((current) => clampWidth(current + delta));
   }
+
 
   // Persist width to sessionStorage so it survives chat↔pipeline navigation
   useEffect(() => {
@@ -102,11 +147,11 @@ export function PdfViewerPanel({ open }: PdfViewerPanelProps) {
         break;
       case "Home":
         event.preventDefault();
-        setWidth(240);
+        setWidth(320);
         break;
       case "End":
         event.preventDefault();
-        setWidth(500);
+        setWidth(800);
         break;
       default:
         break;
@@ -164,12 +209,60 @@ export function PdfViewerPanel({ open }: PdfViewerPanelProps) {
     };
   }, [actions, isModalDialog]);
 
+  const [activeTab, setActiveTab] = useState<"pdf" | "text">("pdf");
+
   const requestedPage = previewRequest?.page ?? preview?.page ?? 1;
   const visiblePage = preview?.page ?? requestedPage;
   const totalPages = preview?.totalPages ?? Math.max(requestedPage, 1);
   const canGoPrevious = requestedPage > 1;
   const canGoNext = requestedPage < totalPages;
   const formattedExcerpt = formatPreviewExcerpt(previewRequest?.excerpt);
+  const previewContent = useMemo(
+    () => (preview ? parsePreviewHtml(preview.htmlContent) : null),
+    [preview?.htmlContent],
+  );
+
+  const userId = useMemo(() => {
+    if (typeof window === "undefined") {
+      return "default";
+    }
+    return window.localStorage.getItem("local-rag-chat/user-id") || "default";
+  }, []);
+
+  const iframeSrc = useMemo(() => {
+    if (!preview?.fileUrl) {
+      return "";
+    }
+    try {
+      const url = new URL(preview.fileUrl);
+      url.searchParams.set("userId", userId);
+      return `${url.toString()}#page=${requestedPage}`;
+    } catch {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL ?? window.location.origin;
+      try {
+        const url = new URL(preview.fileUrl, baseUrl);
+        url.searchParams.set("userId", userId);
+        return `${url.toString()}#page=${requestedPage}`;
+      } catch {
+        return `${preview.fileUrl}#page=${requestedPage}`;
+      }
+    }
+  }, [preview?.fileUrl, requestedPage, userId]);
+
+  useEffect(() => {
+    if (activeTab === "text" && preview) {
+      const timer = setTimeout(() => {
+        const container = panelRef.current;
+        if (container) {
+          const hl = container.querySelector(".pdf-highlight");
+          if (hl) {
+            hl.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }
+      }, 120);
+      return () => clearTimeout(timer);
+    }
+  }, [activeTab, requestedPage, preview]);
 
   if (!open) {
     return null;
@@ -218,6 +311,24 @@ export function PdfViewerPanel({ open }: PdfViewerPanelProps) {
           </svg>
         </button>
       </div>
+
+      <div className={styles.tabsContainer}>
+        <button
+          className={cn(styles.tabButton, activeTab === "pdf" && styles.activeTab)}
+          onClick={() => setActiveTab("pdf")}
+          type="button"
+        >
+          📄 Original PDF
+        </button>
+        <button
+          className={cn(styles.tabButton, activeTab === "text" && styles.activeTab)}
+          onClick={() => setActiveTab("text")}
+          type="button"
+        >
+          🔍 Extracted Text
+        </button>
+      </div>
+
       <div className={styles.pdfToolbar}>
         <div className={styles.pdfPageInfo}>
           Page {requestedPage} of {totalPages}
@@ -264,31 +375,48 @@ export function PdfViewerPanel({ open }: PdfViewerPanelProps) {
             </button>
           </div>
         ) : preview ? (
-          <>
-            {state.isPdfPreviewLoading ? (
-              <div className={styles.loadingBanner}>
-                {requestedPage === visiblePage
-                  ? `Loading page ${requestedPage}...`
-                  : `Loading page ${requestedPage}. Still showing page ${visiblePage} until it arrives.`}
+          activeTab === "pdf" ? (
+            <div className={styles.iframeContainer}>
+              {state.isPdfPreviewLoading && (
+                <div className={styles.loadingOverlay}>
+                  <div className={styles.loadingSpinner} />
+                  <span>Loading PDF layout...</span>
+                </div>
+              )}
+              {iframeSrc ? (
+                <iframe
+                  key={iframeSrc}
+                  src={iframeSrc}
+                  className={styles.pdfIframe}
+                  title="PDF Native Viewer"
+                />
+              ) : (
+                <div className={styles.pdfState}>
+                  <div className={styles.pdfStateTitle}>No PDF File Available</div>
+                  <div className={styles.pdfStateBody}>We couldn't resolve the source file for this preview.</div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className={styles.textScrollContainer}>
+              {state.isPdfPreviewLoading ? (
+                <div className={styles.loadingBanner}>
+                  {requestedPage === visiblePage
+                    ? `Loading page ${requestedPage}...`
+                    : `Loading page ${requestedPage}. Still showing page ${visiblePage} until it arrives.`}
+                </div>
+              ) : null}
+              <div className={styles.pdfPage}>
+                {previewContent}
               </div>
-            ) : null}
-            <div
-              className={styles.pdfPage}
-              dangerouslySetInnerHTML={{ __html: preview.htmlContent }}
-              ref={(el) => {
-                highlightRef.current = el;
-                if (el) {
-                  const hl = el.querySelector(".pdf-highlight");
-                  if (hl) {
-                    hl.scrollIntoView({ behavior: "smooth", block: "center" });
-                  }
-                }
-              }}
-            />
-            <div className={styles.pdfPageNum}>Page {visiblePage}</div>
-          </>
+              <div className={styles.pdfPageNum}>Page {visiblePage}</div>
+            </div>
+          )
         ) : null}
       </div>
     </div>
   );
 }
+
+
+

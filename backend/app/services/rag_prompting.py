@@ -12,8 +12,8 @@ from app.services.rag_types import RetrievedContext
 PROMPT_HISTORY_USER_MESSAGE_LIMIT = 2
 PROMPT_PDF_CONTEXT_LIMIT = 3
 PROMPT_WEB_CONTEXT_LIMIT = 2
-PROMPT_PDF_CONTEXT_CHAR_LIMIT = 600
-PROMPT_WEB_CONTEXT_CHAR_LIMIT = 650
+PROMPT_PDF_CONTEXT_CHAR_LIMIT = 1200
+PROMPT_WEB_CONTEXT_CHAR_LIMIT = 1000
 
 
 def select_contexts(
@@ -22,8 +22,10 @@ def select_contexts(
     *,
     top_k: int,
 ) -> list[RetrievedContext]:
-    selected_pdf_contexts = pdf_contexts[: min(PROMPT_PDF_CONTEXT_LIMIT, top_k)]
-    selected_web_contexts = web_contexts[: min(PROMPT_WEB_CONTEXT_LIMIT, top_k)]
+    pdf_limit = 12 if top_k >= 10 else (6 if top_k >= 5 else PROMPT_PDF_CONTEXT_LIMIT)
+    web_limit = 6 if top_k >= 10 else (3 if top_k >= 5 else PROMPT_WEB_CONTEXT_LIMIT)
+    selected_pdf_contexts = pdf_contexts[: min(pdf_limit, top_k)]
+    selected_web_contexts = web_contexts[: min(web_limit, top_k)]
     return [*selected_pdf_contexts, *selected_web_contexts]
 
 
@@ -32,6 +34,7 @@ def build_prompt(
     question: str,
     contexts: list[RetrievedContext],
     history_messages: Sequence[dict[str, str]],
+    response_length: str = "standard",
 ) -> str:
     prompt_sections = [
         "Use only the retrieved evidence below to answer the user's question.",
@@ -45,7 +48,7 @@ def build_prompt(
         prompt_sections.append(
             "PDF context:\n"
             + "\n\n".join(
-                render_context_for_prompt(question=question, context=context)
+                render_context_for_prompt(question=question, context=context, response_length=response_length)
                 for context in pdf_contexts
             )
         )
@@ -54,7 +57,7 @@ def build_prompt(
         prompt_sections.append(
             "Web search context:\n"
             + "\n\n".join(
-                render_context_for_prompt(question=question, context=context)
+                render_context_for_prompt(question=question, context=context, response_length=response_length)
                 for context in web_contexts
             )
         )
@@ -82,12 +85,16 @@ def render_context_for_prompt(
     *,
     question: str,
     context: RetrievedContext,
+    response_length: str = "standard",
 ) -> str:
-    max_chars = (
-        PROMPT_WEB_CONTEXT_CHAR_LIMIT
-        if context.kind == "web"
-        else PROMPT_PDF_CONTEXT_CHAR_LIMIT
-    )
+    if response_length == "comprehensive":
+        max_chars = 3000 if context.kind == "pdf" else 2000
+    else:
+        max_chars = (
+            PROMPT_WEB_CONTEXT_CHAR_LIMIT
+            if context.kind == "web"
+            else PROMPT_PDF_CONTEXT_CHAR_LIMIT
+        )
     return (
         f"{context.label}\n"
         f"{focus_context_text(question=question, text=context.text, max_chars=max_chars)}"

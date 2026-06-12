@@ -36,6 +36,9 @@ export interface WorkbenchState {
   pdfPreviewError: string | null;
   pdfPreviewRequest: PdfPreviewRequest | null;
   toastMessage: string | null;
+  detailedAnswerEnabled: boolean;
+  draftImages: Array<{ data: string; mimeType: string; url: string }>;
+  thinkingSupported: boolean;
 }
 
 export interface WorkbenchActions {
@@ -49,7 +52,9 @@ export interface WorkbenchActions {
   setDraftMessage: (nextValue: string) => void;
   toggleWebSearch: () => void;
   toggleThinking: () => void;
+  toggleDetailedAnswer: () => void;
   sendMessage: (text: string) => Promise<void>;
+  stopMessage: () => void;
   openPdfPreview: (citation: Citation) => Promise<void>;
   goToPdfPreviewPage: (page: number) => Promise<void>;
   retryPdfPreview: () => Promise<void>;
@@ -58,6 +63,9 @@ export interface WorkbenchActions {
   reclusterTopics: () => Promise<void>;
   removePipelineDocument: (documentId: string) => Promise<void>;
   clearToast: () => void;
+  addDraftImage: (image: { data: string; mimeType: string; url: string }) => void;
+  removeDraftImage: (index: number) => void;
+  clearDraftImages: () => void;
 }
 
 export interface WorkbenchContextValue {

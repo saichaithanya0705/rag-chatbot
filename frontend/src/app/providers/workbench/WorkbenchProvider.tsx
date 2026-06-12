@@ -1,6 +1,5 @@
 import {
   createContext,
-  startTransition,
   useContext,
   useEffect,
   useMemo,
@@ -11,28 +10,21 @@ import {
 import { httpWorkbenchGateway, type KnowledgeBaseRecord } from "@/shared/api/httpWorkbench";
 import type {
   IngestionProgressEvent,
-  Message,
   PipelineDocument,
   PipelineStatus,
 } from "@/shared/api/types";
 import {
   COMPACT_VIEWPORT_MEDIA_QUERY,
   createInitialWorkbenchState,
-  persistThinkingEnabled,
 } from "./workbenchInitialState";
 import { useStableWorkbenchActions } from "./workbenchActions";
+import { createWorkbenchChatActions } from "./workbenchChatActions";
 import { createWorkbenchPipelineActions } from "./workbenchPipelineActions";
 import { createWorkbenchPreviewActions } from "./workbenchPreviewActions";
 import { createWorkbenchSessionActions } from "./workbenchSessionActions";
 import {
-  appendMessages,
-  buildPendingAnswerTrace,
   normalizeCollectionId,
-  replaceMessage,
-  resolveCollectionLabel,
   toStatusMap,
-  updateMessage,
-  updateMessageContent,
 } from "./workbenchStateHelpers";
 import type { WorkbenchContextValue, WorkbenchState } from "./workbenchTypes";
 
@@ -44,9 +36,11 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const toastTimeoutRef = useRef<number | null>(null);
   const titleSyncTimeoutRef = useRef<Map<string, number>>(new Map());
   const sendInFlightRef = useRef(false);
+  const activeChatAbortControllerRef = useRef<AbortController | null>(null);
   const documentStatusRef = useRef<Record<string, PipelineStatus>>({});
   const pipelineDocumentsRef = useRef<PipelineDocument[]>(state.pipelineDocuments);
   const thinkingEnabledRef = useRef(state.thinkingEnabled);
+  const detailedAnswerEnabledRef = useRef(state.detailedAnswerEnabled);
 
   function showToast(message: string) {
     if (toastTimeoutRef.current !== null) {
@@ -145,11 +139,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       pipelineDocuments: payload.pipelineDocuments,
       knowledgeGraph: payload.knowledgeGraph,
       knowledgeBaseSummary: payload.knowledgeBaseSummary,
+      thinkingSupported: payload.thinkingSupported,
       bootstrapError: null,
       sidebarOpen: previous.isCompactViewport ? false : true,
       webSearchEnabled: true,
       webSearchOffline: false,
-      thinkingEnabled: previous.thinkingEnabled,
+      thinkingEnabled: payload.thinkingSupported ? previous.thinkingEnabled : false,
       pdfPreview: null,
       pdfPreviewError: null,
       pdfPreviewRequest: null,
@@ -232,6 +227,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     thinkingEnabledRef.current = state.thinkingEnabled;
   }, [state.thinkingEnabled]);
 
+  useEffect(() => {
+    detailedAnswerEnabledRef.current = state.detailedAnswerEnabled;
+  }, [state.detailedAnswerEnabled]);
+
   const activeIngestionSignature = state.pipelineDocuments
     .filter((document) => document.status !== "indexed" && document.status !== "error")
     .map((document) => document.id)
@@ -248,6 +247,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         window.clearTimeout(timeoutId);
       });
       titleSyncTimeoutRef.current.clear();
+
+      activeChatAbortControllerRef.current?.abort();
+      activeChatAbortControllerRef.current = null;
     };
   }, []);
 
@@ -314,6 +316,19 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     refreshKnowledgeBase,
     documentStatusRef,
   });
+  const { selectCollection, setDraftMessage, toggleWebSearch, toggleThinking, toggleDetailedAnswer, sendMessage, stopMessage } =
+    createWorkbenchChatActions({
+      state,
+      setState,
+      sendInFlightRef,
+      activeChatAbortControllerRef,
+      thinkingEnabledRef,
+      detailedAnswerEnabledRef,
+      titleSyncTimeoutRef,
+      showToast,
+      refreshSessions,
+      scheduleSessionTitleRefresh,
+    });
 
   async function retryBootstrap() {
     setState((previous) => ({
@@ -351,235 +366,31 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     }));
   }
 
-  function selectCollection(collectionId: string) {
-    setState((previous) =>
-      previous.isSendingMessage
-        ? previous
-        : {
-            ...previous,
-            activeCollectionId: normalizeCollectionId(previous.collections, collectionId),
-          },
-    );
-  }
-
-  function setDraftMessage(nextValue: string) {
-    setState((previous) => ({
-      ...previous,
-      draftMessage: nextValue,
-    }));
-  }
-
-  function toggleWebSearch() {
-    setState((previous) =>
-      previous.isSendingMessage
-        ? previous
-        : {
-            ...previous,
-            webSearchEnabled: !previous.webSearchEnabled,
-            webSearchOffline: previous.webSearchEnabled ? false : previous.webSearchOffline,
-          },
-    );
-  }
-
-  function toggleThinking() {
-    setState((previous) => {
-      if (previous.isSendingMessage) {
-        return previous;
-      }
-
-      const nextValue = !previous.thinkingEnabled;
-      persistThinkingEnabled(nextValue);
-      return {
-        ...previous,
-        thinkingEnabled: nextValue,
-      };
-    });
-  }
-
-  async function sendMessage(text: string) {
-    const trimmed = text.trim();
-    if (!trimmed || !state.activeSessionId || sendInFlightRef.current) {
-      return;
-    }
-
-    sendInFlightRef.current = true;
-    const activeSessionId = state.activeSessionId;
-    const requestedCollectionId = normalizeCollectionId(state.collections, state.activeCollectionId);
-    const requestedCollectionLabel = resolveCollectionLabel(state.collections, requestedCollectionId);
-    const webSearchRequested = state.webSearchEnabled;
-    const thinkingEnabled = Boolean(thinkingEnabledRef.current);
-    const pendingAnswerTrace = buildPendingAnswerTrace(requestedCollectionLabel, webSearchRequested);
-
-    const assistantMessageId = `assistant-${crypto.randomUUID()}`;
-    const userMessage: Message = {
-      id: `user-${crypto.randomUUID()}`,
-      role: "user",
-      content: trimmed,
-      status: "complete",
-      citations: [],
-      collectionId: requestedCollectionId,
-      collectionLabel: requestedCollectionLabel,
-      webSearchRequested,
-    };
-
-    const thinkingMessage: Message = {
-      id: assistantMessageId,
-      role: "assistant",
-      content: "Thinking...",
-      status: "thinking",
-      citations: [],
-      answerTrace: pendingAnswerTrace,
-      collectionId: requestedCollectionId,
-      collectionLabel: requestedCollectionLabel,
-      webSearchRequested,
-      thinkingRequested: thinkingEnabled,
-      modelThinking: undefined,
-    };
-
-    setState((previous) => ({
-      ...previous,
-      isSendingMessage: true,
-      draftMessage: "",
-      webSearchOffline: false,
-      messagesBySession: appendMessages(previous.messagesBySession, previous.activeSessionId, [
-        userMessage,
-        thinkingMessage,
-      ]),
-      pdfPreview: null,
-      pdfPreviewError: null,
-      pdfPreviewRequest: null,
-      isPdfPreviewLoading: false,
-    }));
-
-    let streamedContent = "";
-    const shouldWaitForGeneratedTitle = state.sessions.some(
-      (session) => session.id === activeSessionId && session.title === "New chat",
-    );
-
-    try {
-      const assistantResult = await httpWorkbenchGateway.streamMessage(
-        {
-          sessionId: activeSessionId,
-          text: trimmed,
-          collectionId: requestedCollectionId,
-          webSearchEnabled: webSearchRequested,
-          thinkingEnabled,
-        },
-        {
-          onToken: (delta) => {
-            streamedContent += delta;
-            setState((previous) => ({
-              ...previous,
-              messagesBySession: updateMessageContent(
-                previous.messagesBySession,
-                activeSessionId,
-                assistantMessageId,
-                streamedContent || "Thinking...",
-              ),
-            }));
-          },
-          onTool: (toolCall, offlineWarning) => {
-            setState((previous) => ({
-              ...previous,
-              webSearchOffline: Boolean(offlineWarning),
-              messagesBySession: updateMessage(
-                previous.messagesBySession,
-                activeSessionId,
-                assistantMessageId,
-                (message) => ({
-                  ...message,
-                  toolCall,
-                  offlineWarning: offlineWarning ?? message.offlineWarning,
-                }),
-              ),
-            }));
-
-            if (offlineWarning) {
-              showToast(offlineWarning);
-            }
-          },
-        },
-      );
-
-      startTransition(() => {
-        setState((previous) => ({
-          ...previous,
-          webSearchOffline: Boolean(assistantResult.offlineWarning),
-          sessions: assistantResult.sessionTitle
-            ? previous.sessions.map((session) =>
-                session.id === activeSessionId
-                  ? { ...session, title: assistantResult.sessionTitle ?? session.title }
-                  : session,
-              )
-            : previous.sessions,
-          messagesBySession: replaceMessage(
-            previous.messagesBySession,
-            activeSessionId,
-            assistantMessageId,
-            {
-              ...assistantResult.message,
-              id: assistantMessageId,
-              collectionId: assistantResult.message.collectionId ?? requestedCollectionId,
-              collectionLabel: assistantResult.message.collectionLabel ?? requestedCollectionLabel,
-              webSearchRequested: assistantResult.message.webSearchRequested ?? webSearchRequested,
-              thinkingRequested: assistantResult.message.thinkingRequested ?? thinkingEnabled,
-            },
-          ),
-        }));
-      });
-
-      if (assistantResult.sessionTitle) {
-        const existingTimeout = titleSyncTimeoutRef.current.get(activeSessionId);
-        if (existingTimeout !== undefined) {
-          window.clearTimeout(existingTimeout);
-          titleSyncTimeoutRef.current.delete(activeSessionId);
-        }
-      }
-
-      if (assistantResult.message.sessionWarning) {
-        showToast(assistantResult.message.sessionWarning);
-      }
-
-      void refreshSessions(activeSessionId);
-      if (!assistantResult.sessionTitle && shouldWaitForGeneratedTitle) {
-        scheduleSessionTitleRefresh(activeSessionId);
-      }
-    } catch (error) {
-      const errorMessage = httpWorkbenchGateway.resolveErrorMessage(error);
-      setState((previous) => ({
-        ...previous,
-        messagesBySession: replaceMessage(
-          previous.messagesBySession,
-          activeSessionId,
-          assistantMessageId,
-          {
-            id: assistantMessageId,
-            role: "assistant",
-            content: errorMessage,
-            status: "complete",
-            citations: [],
-            answerTrace: pendingAnswerTrace,
-            collectionId: requestedCollectionId,
-            collectionLabel: requestedCollectionLabel,
-            webSearchRequested,
-            thinkingRequested: thinkingEnabled,
-            modelThinking: undefined,
-          },
-        ),
-      }));
-    } finally {
-      sendInFlightRef.current = false;
-      setState((previous) => ({
-        ...previous,
-        isSendingMessage: false,
-      }));
-    }
-  }
-
   function clearToast() {
     setState((previous) => ({
       ...previous,
       toastMessage: null,
+    }));
+  }
+
+  function addDraftImage(image: { data: string; mimeType: string; url: string }) {
+    setState((previous) => ({
+      ...previous,
+      draftImages: [...previous.draftImages, image],
+    }));
+  }
+
+  function removeDraftImage(index: number) {
+    setState((previous) => ({
+      ...previous,
+      draftImages: previous.draftImages.filter((_, idx) => idx !== index),
+    }));
+  }
+
+  function clearDraftImages() {
+    setState((previous) => ({
+      ...previous,
+      draftImages: [],
     }));
   }
 
@@ -594,7 +405,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     setDraftMessage,
     toggleWebSearch,
     toggleThinking,
+    toggleDetailedAnswer,
     sendMessage,
+    stopMessage,
     openPdfPreview,
     goToPdfPreviewPage,
     retryPdfPreview,
@@ -603,6 +416,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     reclusterTopics,
     removePipelineDocument,
     clearToast,
+    addDraftImage,
+    removeDraftImage,
+    clearDraftImages,
   });
 
   const value: WorkbenchContextValue = useMemo(

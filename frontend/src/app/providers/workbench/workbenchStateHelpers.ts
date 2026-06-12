@@ -80,6 +80,18 @@ export function updateMessage(
   };
 }
 
+export function removeMessages(
+  messageMap: Record<string, Message[]>,
+  sessionId: string,
+  targetIds: string[],
+) {
+  const idsToRemove = new Set(targetIds);
+  return {
+    ...messageMap,
+    [sessionId]: (messageMap[sessionId] ?? []).filter((message) => !idsToRemove.has(message.id)),
+  };
+}
+
 export function retainKnownSessionMessages(
   messageMap: Record<string, Message[]>,
   sessionIds: string[],
@@ -103,6 +115,10 @@ export function normalizeCollectionId(
 
 export function resolveCollectionLabel(collections: CollectionSummary[], collectionId: string) {
   return collections.find((collection) => collection.id === collectionId)?.label ?? "All PDFs";
+}
+
+export function hasDraftSubmissionContent(text: string, imageCount: number) {
+  return text.trim().length > 0 || imageCount > 0;
 }
 
 export function buildPendingAnswerTrace(collectionLabel: string, webSearchRequested: boolean) {

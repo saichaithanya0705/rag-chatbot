@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering, HDBSCAN
@@ -19,6 +22,10 @@ from app.services.kg_manager import KgManager, TopicNodeRecord, TopicSummary
 SLUG_PATTERN = re.compile(r"[^a-z0-9]+")
 USER_SLUG_LENGTH = 18
 USER_HASH_LENGTH = 12
+TOPIC_PROJECTION_STATUS_STARTED = "started"
+TOPIC_PROJECTION_STATUS_FAILED = "failed"
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -35,6 +42,14 @@ class TopicReclusterResult:
     document_topic_map: dict[str, list[str]]
     indexed_chunks: int
     document_count: int
+
+
+@dataclass(frozen=True)
+class TopicProjectionSnapshot:
+    chunk_id: str
+    topic: str | None
+    collection_id: str | None
+    retrieval_collection_id: str | None
 
 
 class TopicIndexService:
@@ -56,6 +71,7 @@ class TopicIndexService:
         self._min_cluster_size = min_cluster_size
         self._min_samples = min_samples
         self._merge_threshold = merge_threshold
+        self._recover_incomplete_topic_projection_runs()
 
     def list_topics(self, *, user_id: str) -> list[TopicSummary]:
         return self._kg_manager.topic_summaries(user_id)
@@ -83,8 +99,11 @@ class TopicIndexService:
 
         cluster_assignments = self._cluster_chunks(source_chunks)
         topics = self._build_topics(user_id, source_chunks, cluster_assignments)
-        self._update_flat_collection_metadata(source_chunks, topics)
-        self._kg_manager.rebuild(user_id, topics)
+        self._commit_topic_projection(
+            user_id=user_id,
+            source_chunks=source_chunks,
+            topics=topics,
+        )
 
         document_topic_map = self._kg_manager.document_topic_map(user_id)
         return TopicReclusterResult(
@@ -140,8 +159,11 @@ class TopicIndexService:
             for topic in new_topics:
                 topic_map[topic.collection_id] = topic
 
-        self._update_flat_collection_metadata(new_chunks, list(topic_map.values()))
-        self._kg_manager.rebuild(user_id, list(topic_map.values()))
+        self._commit_topic_projection(
+            user_id=user_id,
+            source_chunks=new_chunks,
+            topics=list(topic_map.values()),
+        )
         document_topic_map = self._kg_manager.document_topic_map(user_id)
         return TopicReclusterResult(
             topics=self._kg_manager.topic_summaries(user_id),
@@ -576,6 +598,293 @@ class TopicIndexService:
                 ],
                 embeddings=[chunk.embedding for chunk in chunks],
             )
+
+    def _commit_topic_projection(
+        self,
+        *,
+        user_id: str,
+        source_chunks: list[SourceChunkRecord],
+        topics: list[TopicNodeRecord],
+    ) -> None:
+        snapshots = self._snapshot_topic_projection(
+            user_id=user_id,
+            source_chunks=source_chunks,
+        )
+        run_id = self._create_topic_projection_run(
+            user_id=user_id,
+            snapshots=snapshots,
+        )
+        try:
+            self._update_flat_collection_metadata(source_chunks, topics)
+            self._kg_manager.rebuild(user_id, topics)
+        except Exception as projection_error:
+            rollback_error = self._restore_topic_projection(
+                user_id=user_id,
+                snapshots=snapshots,
+            )
+            if rollback_error is None:
+                self._delete_topic_projection_run(run_id)
+                raise
+            self._mark_topic_projection_failed(run_id)
+            raise RuntimeError(
+                "Topic projection failed and rollback could not be fully applied."
+            ) from projection_error
+        self._delete_topic_projection_run(run_id)
+
+    def _recover_incomplete_topic_projection_runs(self) -> None:
+        with self._database.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT run_id, user_id, rollback_payload
+                FROM topic_projection_journal
+                WHERE status = ?
+                ORDER BY created_at ASC
+                """,
+                (TOPIC_PROJECTION_STATUS_STARTED,),
+            ).fetchall()
+
+        for row in rows:
+            run_id = str(row["run_id"])
+            user_id = str(row["user_id"])
+            snapshots = self._deserialize_projection_snapshots(str(row["rollback_payload"]))
+            rollback_error = self._restore_topic_projection(
+                user_id=user_id,
+                snapshots=snapshots,
+            )
+            if rollback_error is None:
+                logger.warning(
+                    "Recovered incomplete topic projection run '%s' for user '%s'.",
+                    run_id,
+                    user_id,
+                )
+                self._delete_topic_projection_run(run_id)
+                continue
+            logger.error(
+                "Failed to recover incomplete topic projection run '%s' for user '%s': %s",
+                run_id,
+                user_id,
+                rollback_error,
+            )
+            self._mark_topic_projection_failed(run_id)
+
+    def _snapshot_topic_projection(
+        self,
+        *,
+        user_id: str,
+        source_chunks: list[SourceChunkRecord],
+    ) -> list[TopicProjectionSnapshot]:
+        retrieval_collection_ids = self._load_retrieval_collection_ids(user_id=user_id)
+        snapshots: list[TopicProjectionSnapshot] = []
+        for chunk in source_chunks:
+            metadata = dict(chunk.metadata or {})
+            snapshots.append(
+                TopicProjectionSnapshot(
+                    chunk_id=chunk.id,
+                    topic=(
+                        str(metadata.get("topic")).strip()
+                        if metadata.get("topic") is not None and str(metadata.get("topic")).strip()
+                        else None
+                    ),
+                    collection_id=(
+                        str(metadata.get("collection_id")).strip()
+                        if metadata.get("collection_id") is not None
+                        and str(metadata.get("collection_id")).strip()
+                        else None
+                    ),
+                    retrieval_collection_id=retrieval_collection_ids.get(chunk.id),
+                )
+            )
+        return snapshots
+
+    def _load_retrieval_collection_ids(self, *, user_id: str) -> dict[str, str | None]:
+        with self._database.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT chunk_id, collection_id
+                FROM retrieval_chunks
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            ).fetchall()
+        return {
+            str(row["chunk_id"]): (
+                str(row["collection_id"]).strip()
+                if row["collection_id"] is not None and str(row["collection_id"]).strip()
+                else None
+            )
+            for row in rows
+        }
+
+    def _create_topic_projection_run(
+        self,
+        *,
+        user_id: str,
+        snapshots: list[TopicProjectionSnapshot],
+    ) -> str:
+        run_id = str(uuid4())
+        timestamp = datetime.now(UTC).isoformat()
+        with self._database.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO topic_projection_journal (
+                    run_id,
+                    user_id,
+                    status,
+                    rollback_payload,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    user_id,
+                    TOPIC_PROJECTION_STATUS_STARTED,
+                    self._serialize_projection_snapshots(snapshots),
+                    timestamp,
+                    timestamp,
+                ),
+            )
+        return run_id
+
+    def _delete_topic_projection_run(self, run_id: str) -> None:
+        with self._database.connect() as connection:
+            connection.execute(
+                "DELETE FROM topic_projection_journal WHERE run_id = ?",
+                (run_id,),
+            )
+
+    def _mark_topic_projection_failed(self, run_id: str) -> None:
+        with self._database.connect() as connection:
+            connection.execute(
+                """
+                UPDATE topic_projection_journal
+                SET status = ?, updated_at = ?
+                WHERE run_id = ?
+                """,
+                (
+                    TOPIC_PROJECTION_STATUS_FAILED,
+                    datetime.now(UTC).isoformat(),
+                    run_id,
+                ),
+            )
+
+    def _restore_topic_projection(
+        self,
+        *,
+        user_id: str,
+        snapshots: list[TopicProjectionSnapshot],
+    ) -> Exception | None:
+        try:
+            self._restore_flat_collection_metadata(snapshots=snapshots)
+            with self._database.connect() as connection:
+                connection.executemany(
+                    """
+                    UPDATE retrieval_chunks
+                    SET collection_id = ?
+                    WHERE chunk_id = ? AND user_id = ?
+                    """,
+                    [
+                        (
+                            snapshot.retrieval_collection_id,
+                            snapshot.chunk_id,
+                            user_id,
+                        )
+                        for snapshot in snapshots
+                    ],
+                )
+        except Exception as rollback_error:
+            return rollback_error
+        return None
+
+    def _restore_flat_collection_metadata(
+        self,
+        *,
+        snapshots: list[TopicProjectionSnapshot],
+    ) -> None:
+        if not snapshots:
+            return
+        snapshot_by_chunk_id = {snapshot.chunk_id: snapshot for snapshot in snapshots}
+        chunk_ids = list(snapshot_by_chunk_id)
+        rows = self._chroma_store.collection("all_chunks").get(
+            ids=chunk_ids,
+            include=["metadatas"],
+        )
+        found_ids = [str(chunk_id) for chunk_id in rows.get("ids", [])]
+        metadatas = [dict(metadata or {}) for metadata in rows.get("metadatas", [])]
+
+        updated_ids: list[str] = []
+        updated_metadatas: list[dict[str, Any]] = []
+        for chunk_id, metadata in zip(found_ids, metadatas, strict=False):
+            snapshot = snapshot_by_chunk_id.get(chunk_id)
+            if snapshot is None:
+                continue
+            next_metadata = dict(metadata)
+            if snapshot.topic is None:
+                next_metadata.pop("topic", None)
+            else:
+                next_metadata["topic"] = snapshot.topic
+            if snapshot.collection_id is None:
+                next_metadata.pop("collection_id", None)
+            else:
+                next_metadata["collection_id"] = snapshot.collection_id
+            updated_ids.append(chunk_id)
+            updated_metadatas.append(next_metadata)
+        if updated_ids:
+            self._chroma_store.collection("all_chunks").update(
+                ids=updated_ids,
+                metadatas=updated_metadatas,
+            )
+
+    @staticmethod
+    def _serialize_projection_snapshots(snapshots: list[TopicProjectionSnapshot]) -> str:
+        return json.dumps(
+            [
+                {
+                    "chunk_id": snapshot.chunk_id,
+                    "topic": snapshot.topic,
+                    "collection_id": snapshot.collection_id,
+                    "retrieval_collection_id": snapshot.retrieval_collection_id,
+                }
+                for snapshot in snapshots
+            ]
+        )
+
+    @staticmethod
+    def _deserialize_projection_snapshots(payload: str) -> list[TopicProjectionSnapshot]:
+        try:
+            parsed = json.loads(payload)
+        except json.JSONDecodeError:
+            return []
+        snapshots: list[TopicProjectionSnapshot] = []
+        for item in parsed:
+            data = dict(item)
+            chunk_id = str(data.get("chunk_id", "")).strip()
+            if not chunk_id:
+                continue
+            snapshots.append(
+                TopicProjectionSnapshot(
+                    chunk_id=chunk_id,
+                    topic=(
+                        str(data["topic"])
+                        if data.get("topic") is not None and str(data["topic"]).strip()
+                        else None
+                    ),
+                    collection_id=(
+                        str(data["collection_id"])
+                        if data.get("collection_id") is not None
+                        and str(data["collection_id"]).strip()
+                        else None
+                    ),
+                    retrieval_collection_id=(
+                        str(data["retrieval_collection_id"])
+                        if data.get("retrieval_collection_id") is not None
+                        and str(data["retrieval_collection_id"]).strip()
+                        else None
+                    ),
+                )
+            )
+        return snapshots
 
     def _update_flat_collection_metadata(
         self,

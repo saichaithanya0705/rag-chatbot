@@ -210,18 +210,31 @@ export function ChatView({ active }: ChatViewProps) {
   return (
     <div className={cn(styles.view, active && styles.viewActive)}>
       <div className={styles.chatTopbar}>
-        <button
-          aria-controls="sidebar"
-          aria-expanded={state.sidebarOpen}
-          aria-label={state.sidebarOpen ? "Hide history" : "Show history"}
-          className={cn(styles.iconBtn, styles.hamburgerBtn)}
-          onClick={actions.toggleSidebar}
-          type="button"
-        >
-          <span className={cn(styles.hamburgerBar, state.sidebarOpen && styles.hamburgerTop)} />
-          <span className={cn(styles.hamburgerBar, state.sidebarOpen && styles.hamburgerMid)} />
-          <span className={cn(styles.hamburgerBar, state.sidebarOpen && styles.hamburgerBot)} />
-        </button>
+        {!state.sidebarOpen && (
+          <button
+            aria-controls="sidebar"
+            aria-expanded={false}
+            aria-label="Show history"
+            className={cn(styles.iconBtn, styles.hamburgerBtn)}
+            onClick={actions.toggleSidebar}
+            type="button"
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect width="18" height="18" x="3" y="3" rx="2" />
+              <path d="M9 3v18" />
+              <path d="m14 9 3 3-3 3" />
+            </svg>
+          </button>
+        )}
         <div className={styles.pageTitleGroup}>
           <h1 className={styles.pageTitle}>Research chat</h1>
           <p className={styles.pageSubhead}>Ask across your indexed PDFs and open cited evidence without leaving the thread.</p>
@@ -314,20 +327,39 @@ export function ChatView({ active }: ChatViewProps) {
               Search offline. PDF answers still work.
             </span>
           </div>
-          <div className={styles.webToggleWrap}>
+          <div
+            className={styles.webToggleWrap}
+            style={{ opacity: state.thinkingSupported ? 1 : 0.5 }}
+            title={state.thinkingSupported ? undefined : "The currently configured model does not support reasoning"}
+          >
             <button
               aria-label={
                 state.thinkingEnabled ? "Turn model thinking off" : "Turn model thinking on"
               }
               aria-pressed={state.thinkingEnabled}
               className={cn(styles.toggleTrack, state.thinkingEnabled && styles.toggleTrackOn)}
-              disabled={isScopeLocked}
+              disabled={isScopeLocked || !state.thinkingSupported}
               onClick={actions.toggleThinking}
               type="button"
             >
               <div className={styles.toggleKnob} />
             </button>
             <span className={styles.webToggleLabel}>Model thinking</span>
+          </div>
+          <div className={styles.webToggleWrap}>
+            <button
+              aria-label={
+                state.detailedAnswerEnabled ? "Turn detailed answers off" : "Turn detailed answers on"
+              }
+              aria-pressed={state.detailedAnswerEnabled}
+              className={cn(styles.toggleTrack, state.detailedAnswerEnabled && styles.toggleTrackOn)}
+              disabled={isScopeLocked}
+              onClick={actions.toggleDetailedAnswer}
+              type="button"
+            >
+              <div className={styles.toggleKnob} />
+            </button>
+            <span className={styles.webToggleLabel}>Detailed answers</span>
           </div>
         </div>
         <button

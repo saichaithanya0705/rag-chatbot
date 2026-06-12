@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from app.services.document_catalog_service import DocumentCatalogService
-from app.services.document_chunk_metadata_service import DocumentChunkMetadataService
 from app.core.chroma_store import ChromaStore
 from app.core.database import Database
+from app.services.chunk_store_service import ChunkStoreService
+from app.services.document_catalog_service import DocumentCatalogService
+from app.services.document_chunk_metadata_service import DocumentChunkMetadataService
+from app.services.document_repository import DocumentRepository
 from app.services.document_types import RetrievalChunkCatalogEntry, StoredChunk
 
 
@@ -22,133 +23,35 @@ class DocumentService:
         chroma_store: ChromaStore,
         collection_name: str = "all_chunks",
     ) -> None:
-        self._database = database
-        self._chroma_store = chroma_store
-        self._collection_name = collection_name
         self._catalog_service = DocumentCatalogService(
             database=database,
             collection_name=collection_name,
         )
+        self._document_repository = DocumentRepository(database=database)
+        self._chunk_store_service = ChunkStoreService(
+            chroma_store=chroma_store,
+            collection_name=collection_name,
+        )
         self._chunk_metadata_service = DocumentChunkMetadataService(
             database=database,
-            collection_getter=self._collection,
+            collection_getter=self._chunk_store_service.collection,
             catalog_service=self._catalog_service,
         )
 
-    def _collection(self) -> Any:
-        return self._chroma_store.collection(self._collection_name)
-
     def list_documents(self, *, user_id: str) -> list[dict[str, Any]]:
-        with self._database.connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT
-                    id,
-                    user_id,
-                    pdf_name,
-                    source_path,
-                    page_count,
-                    chunk_count,
-                    status,
-                    progress,
-                    error_message,
-                    chunking_threshold,
-                    created_at,
-                    updated_at
-                FROM ingested_documents
-                WHERE user_id = ?
-                ORDER BY updated_at DESC, created_at DESC, id DESC
-                """,
-                (user_id,),
-            ).fetchall()
-        return [dict(row) for row in rows]
+        return self._document_repository.list_documents(user_id=user_id)
 
     def list_active_documents(self) -> list[dict[str, Any]]:
-        placeholders = ", ".join("?" for _ in ACTIVE_DOCUMENT_STATUSES)
-        with self._database.connect() as connection:
-            rows = connection.execute(
-                f"""
-                SELECT
-                    id,
-                    user_id,
-                    pdf_name,
-                    source_path,
-                    page_count,
-                    chunk_count,
-                    status,
-                    progress,
-                    error_message,
-                    chunking_threshold,
-                    created_at,
-                    updated_at
-                FROM ingested_documents
-                WHERE status IN ({placeholders})
-                ORDER BY created_at ASC, updated_at ASC, id ASC
-                """,
-                tuple(sorted(ACTIVE_DOCUMENT_STATUSES)),
-            ).fetchall()
-        return [dict(row) for row in rows]
+        return self._document_repository.list_active_documents(statuses=ACTIVE_DOCUMENT_STATUSES)
 
     def has_published_chunks(self, document_id: str, *, user_id: str) -> bool:
-        with self._database.connect() as connection:
-            row = connection.execute(
-                """
-                SELECT 1
-                FROM retrieval_chunks
-                WHERE document_id = ? AND user_id = ? AND is_indexed = 1
-                LIMIT 1
-                """,
-                (document_id, user_id),
-            ).fetchone()
-        return row is not None
+        return self._document_repository.has_published_chunks(document_id, user_id=user_id)
 
     def get_document_by_id(self, document_id: str, *, user_id: str) -> dict[str, Any] | None:
-        with self._database.connect() as connection:
-            row = connection.execute(
-                """
-                SELECT
-                    id,
-                    user_id,
-                    pdf_name,
-                    source_path,
-                    page_count,
-                    chunk_count,
-                    status,
-                    progress,
-                    error_message,
-                    chunking_threshold,
-                    created_at,
-                    updated_at
-                FROM ingested_documents
-                WHERE id = ? AND user_id = ?
-                """,
-                (document_id, user_id),
-            ).fetchone()
-        return dict(row) if row else None
+        return self._document_repository.get_document_by_id(document_id, user_id=user_id)
 
     def get_document_by_name(self, pdf_name: str, *, user_id: str) -> dict[str, Any] | None:
-        with self._database.connect() as connection:
-            row = connection.execute(
-                """
-                SELECT
-                    id,
-                    user_id,
-                    pdf_name,
-                    source_path,
-                    page_count,
-                    chunk_count,
-                    status,
-                    progress,
-                    error_message,
-                    chunking_threshold,
-                    created_at,
-                    updated_at
-                FROM ingested_documents
-                WHERE pdf_name = ? AND user_id = ?
-                """,
-                (pdf_name, user_id),
-            ).fetchone()
-        return dict(row) if row else None
+        return self._document_repository.get_document_by_name(pdf_name, user_id=user_id)
 
     def create_pending_document(
         self,
@@ -170,41 +73,12 @@ class DocumentService:
                     f"{pdf_name} is already indexed. Delete it before uploading a replacement."
                 )
 
-        timestamp = datetime.now(UTC).isoformat()
-        with self._database.connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO ingested_documents (
-                    id,
-                    user_id,
-                    pdf_name,
-                    source_path,
-                    page_count,
-                    chunk_count,
-                    status,
-                    progress,
-                    error_message,
-                    chunking_threshold,
-                    created_at,
-                    updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    document_id,
-                    user_id,
-                    pdf_name,
-                    str(source_path),
-                    0,
-                    0,
-                    "queued",
-                    0,
-                    None,
-                    None,
-                    timestamp,
-                    timestamp,
-                ),
-            )
+        self._document_repository.create_pending_document(
+            document_id=document_id,
+            pdf_name=pdf_name,
+            source_path=source_path,
+            user_id=user_id,
+        )
         return self.get_document_by_id(document_id, user_id=user_id) or {}
 
     def update_document_progress(
@@ -223,31 +97,18 @@ class DocumentService:
         if not existing:
             raise FileNotFoundError(f"Document '{document_id}' was not found.")
 
-        with self._database.connect() as connection:
-            connection.execute(
-                """
-                UPDATE ingested_documents
-                SET status = ?,
-                    progress = ?,
-                    page_count = ?,
-                    chunk_count = ?,
-                    error_message = ?,
-                    chunking_threshold = ?,
-                    updated_at = ?
-                WHERE id = ? AND user_id = ?
-                """,
-                (
-                    status,
-                    max(0, min(progress, 100)),
-                    page_count if page_count is not None else int(existing["page_count"]),
-                    chunk_count if chunk_count is not None else int(existing["chunk_count"]),
-                    error_message,
-                    chunking_threshold if chunking_threshold is not None else existing["chunking_threshold"],
-                    datetime.now(UTC).isoformat(),
-                    document_id,
-                    user_id,
-                ),
-            )
+        self._document_repository.update_document_progress(
+            document_id,
+            user_id=user_id,
+            status=status,
+            progress=progress,
+            page_count=page_count if page_count is not None else int(existing["page_count"]),
+            chunk_count=chunk_count if chunk_count is not None else int(existing["chunk_count"]),
+            error_message=error_message,
+            chunking_threshold=(
+                chunking_threshold if chunking_threshold is not None else existing["chunking_threshold"]
+            ),
+        )
 
     def mark_document_error(self, document_id: str, error_message: str, *, user_id: str) -> None:
         self.update_document_progress(
@@ -259,69 +120,22 @@ class DocumentService:
         )
 
     def count_indexed_chunks(self, *, user_id: str) -> int:
-        with self._database.connect() as connection:
-            row = connection.execute(
-                """
-                SELECT COALESCE(SUM(chunk_count), 0) AS total_chunks
-                FROM ingested_documents
-                WHERE user_id = ? AND status = 'indexed'
-                """,
-                (user_id,),
-            ).fetchone()
-        return int(row["total_chunks"]) if row and row["total_chunks"] is not None else 0
+        return self._document_repository.count_indexed_chunks(user_id=user_id)
 
     def sync_chunk_publication_flags(self) -> None:
         self._chunk_metadata_service.sync_chunk_publication_flags()
 
     def publish_document_chunks(self, document_id: str, *, user_id: str) -> None:
-        rows = self._collection().get(
-            where={"$and": [{"document_id": document_id}, {"user_id": user_id}]},
-            include=["metadatas"],
-        )
-        chunk_ids = [str(chunk_id) for chunk_id in rows.get("ids", [])]
-        if not chunk_ids:
-            return
-        updated_metadatas = [
-            {**dict(metadata or {}), "is_indexed": 1}
-            for metadata in rows.get("metadatas", [])
-        ]
-        self._collection().update(ids=chunk_ids, metadatas=updated_metadatas)
-        with self._database.connect() as connection:
-            connection.execute(
-                """
-                UPDATE retrieval_chunks
-                SET is_indexed = 1
-                WHERE document_id = ? AND user_id = ?
-                """,
-                (document_id, user_id),
-            )
+        self._chunk_store_service.publish_chunks(document_id, user_id)
+        self._document_repository.mark_chunks_indexed(document_id, user_id=user_id)
         self._catalog_service.bump_retrieval_corpus_version()
 
     def retrieval_corpus_version(self) -> int:
         return self._catalog_service.retrieval_corpus_version()
 
     def clear_document_content(self, document_id: str, *, user_id: str) -> None:
-        with self._database.connect() as connection:
-            connection.execute(
-                """
-                DELETE FROM ingested_pages
-                WHERE document_id IN (
-                    SELECT id
-                    FROM ingested_documents
-                    WHERE id = ? AND user_id = ?
-                )
-                """,
-                (document_id, user_id),
-            )
-            connection.execute(
-                """
-                DELETE FROM retrieval_chunks
-                WHERE document_id = ? AND user_id = ?
-                """,
-                (document_id, user_id),
-            )
-
-        self._collection().delete(where={"$and": [{"document_id": document_id}, {"user_id": user_id}]})
+        self._document_repository.clear_document_content(document_id, user_id=user_id)
+        self._chunk_store_service.delete_chunks_for_document(document_id, user_id)
         self._catalog_service.bump_retrieval_corpus_version()
 
     def upsert_chunk_catalog_entries(
@@ -377,14 +191,12 @@ class DocumentService:
             return
 
         self.clear_document_content(str(stored["id"]), user_id=user_id)
-        source_path = Path(str(stored["source_path"]))
-        source_path.unlink(missing_ok=True)
-
-        with self._database.connect() as connection:
-            connection.execute(
-                "DELETE FROM ingested_documents WHERE id = ? AND user_id = ?",
-                (stored["id"], user_id),
-            )
+        source_path = Path(str(stored["source_path"])).resolve()
+        # Only delete the source file if it is stored in the application's uploads directory
+        # to prevent deleting original local documents indexed directly via CLI/script.
+        if "uploads" in str(source_path).lower() or source_path.name.startswith("tmp_"):
+            source_path.unlink(missing_ok=True)
+        self._document_repository.delete_document_record(str(stored["id"]), user_id=user_id)
 
     def store_document(
         self,
@@ -397,79 +209,21 @@ class DocumentService:
         chunk_count: int,
         chunking_threshold: float | None = None,
     ) -> None:
-        timestamp = datetime.now(UTC).isoformat()
-        with self._database.connect() as connection:
-            connection.execute(
-                """
-                UPDATE ingested_documents
-                SET pdf_name = ?,
-                    source_path = ?,
-                    page_count = ?,
-                    chunk_count = ?,
-                    status = 'finalizing',
-                    progress = 92,
-                    error_message = NULL,
-                    chunking_threshold = ?,
-                    updated_at = ?
-                WHERE id = ? AND user_id = ?
-                """,
-                (
-                    pdf_name,
-                    str(source_path),
-                    len(page_texts),
-                    chunk_count,
-                    chunking_threshold,
-                    timestamp,
-                    document_id,
-                    user_id,
-                ),
-            )
-            connection.execute(
-                """
-                DELETE FROM ingested_pages
-                WHERE document_id IN (
-                    SELECT id
-                    FROM ingested_documents
-                    WHERE id = ? AND user_id = ?
-                )
-                """,
-                (document_id, user_id),
-            )
-            connection.executemany(
-                """
-                INSERT INTO ingested_pages (document_id, page_number, content)
-                VALUES (?, ?, ?)
-                """,
-                [(document_id, index + 1, content) for index, content in enumerate(page_texts)],
-            )
+        self._document_repository.store_document(
+            document_id=document_id,
+            user_id=user_id,
+            pdf_name=pdf_name,
+            source_path=source_path,
+            page_texts=page_texts,
+            chunk_count=chunk_count,
+            chunking_threshold=chunking_threshold,
+        )
 
     def mark_document_indexed(self, document_id: str, *, user_id: str) -> None:
-        with self._database.connect() as connection:
-            connection.execute(
-                """
-                UPDATE ingested_documents
-                SET status = 'indexed',
-                    progress = 100,
-                    error_message = NULL,
-                    updated_at = ?
-                WHERE id = ? AND user_id = ?
-                """,
-                (datetime.now(UTC).isoformat(), document_id, user_id),
-            )
+        self._document_repository.mark_document_indexed(document_id, user_id=user_id)
 
     def mark_user_documents_indexed(self, *, user_id: str) -> None:
-        with self._database.connect() as connection:
-            connection.execute(
-                """
-                UPDATE ingested_documents
-                SET status = 'indexed',
-                    progress = 100,
-                    error_message = NULL,
-                    updated_at = ?
-                WHERE user_id = ? AND status = 'finalizing'
-                """,
-                (datetime.now(UTC).isoformat(), user_id),
-            )
+        self._document_repository.mark_user_documents_indexed(user_id=user_id)
 
     def get_page_text(
         self,
@@ -488,23 +242,16 @@ class DocumentService:
             document_label = document_id or pdf_name or "document"
             raise FileNotFoundError(f"No ingested document matching '{document_label}' was found.")
 
-        with self._database.connect() as connection:
-            row = connection.execute(
-                """
-                SELECT pages.content
-                FROM ingested_pages AS pages
-                INNER JOIN ingested_documents AS documents
-                    ON documents.id = pages.document_id
-                WHERE documents.id = ? AND documents.user_id = ? AND pages.page_number = ?
-                """,
-                (stored["id"], user_id, page_number),
-            ).fetchone()
-
-        if not row:
+        page_content = self._document_repository.get_page_text(
+            document_id=str(stored["id"]),
+            user_id=user_id,
+            page_number=page_number,
+        )
+        if page_content is None:
             document_label = document_id or pdf_name or "document"
             raise FileNotFoundError(f"Page {page_number} was not found for '{document_label}'.")
 
-        return str(row["content"]), int(stored["page_count"])
+        return page_content, int(stored["page_count"])
 
     def get_chunk(
         self,
@@ -515,42 +262,12 @@ class DocumentService:
         document_id: str | None = None,
         user_id: str,
     ) -> StoredChunk | None:
-        where_clauses: list[dict[str, object]] = [
-            {"user_id": user_id},
-            {"page_number": page_number},
-            {"chunk_index": chunk_index},
-        ]
-        if document_id:
-            where_clauses.append({"document_id": document_id})
-        elif pdf_name is not None:
-            where_clauses.append({"pdf_name": pdf_name})
-        result = self._collection().get(
-            where={"$and": where_clauses},
-            include=["documents", "metadatas"],
-        )
-
-        ids = result.get("ids", [])
-        documents = result.get("documents", [])
-        metadatas = result.get("metadatas", [])
-        if not ids:
-            return None
-
-        metadata = metadatas[0]
-        return StoredChunk(
-            id=ids[0],
-            document_id=str(metadata["document_id"]),
-            user_id=str(metadata["user_id"]),
-            pdf_name=str(metadata["pdf_name"]),
-            page_number=int(metadata["page_number"]),
-            chunk_index=int(metadata["chunk_index"]),
-            text=str(documents[0]),
-            char_start=int(metadata["char_start"]) if metadata.get("char_start") is not None else None,
-            char_end=int(metadata["char_end"]) if metadata.get("char_end") is not None else None,
-            source_text=(
-                str(metadata.get("source_text"))
-                if metadata.get("source_text") is not None and str(metadata.get("source_text")).strip()
-                else None
-            ),
+        return self._chunk_store_service.get_chunk(
+            pdf_name=pdf_name,
+            page_number=page_number,
+            chunk_index=chunk_index,
+            document_id=document_id,
+            user_id=user_id,
         )
 
     def sync_active_chunk_metadata(self) -> None:

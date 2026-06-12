@@ -1,21 +1,23 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class HealthResponse(BaseModel):
     status: str
-    ollama_base_url: str
+    nvidia_base_url: str = Field(alias="nvidiaBaseUrl")
     embed_model: str
     embedding_dimensions: int = Field(alias="embeddingDimensions")
     chat_model: str
     collection_name: str
     indexed_chunks: int
     ingestion_mode: str = Field(alias="ingestionMode")
+    parser_available: bool = Field(alias="parserAvailable")
     ocr_enabled: bool = Field(alias="ocrEnabled")
     ocr_available: bool = Field(alias="ocrAvailable")
+    thinking_supported: bool = Field(default=False, alias="thinkingSupported")
 
     model_config = {
         "populate_by_name": True,
@@ -76,16 +78,33 @@ class AnswerTraceStepPayload(BaseModel):
     detail: str
 
 
+class ChatImage(BaseModel):
+    data: str
+    mime_type: str = Field(alias="mimeType")
+
+    model_config = {
+        "populate_by_name": True,
+    }
+
+
 class ChatRequest(BaseModel):
     message: str
     collection_id: str = Field(default="all-pdfs", alias="collectionId")
     session_id: str | None = Field(default=None, alias="sessionId")
     web_search_enabled: bool = Field(default=True, alias="webSearchEnabled")
     thinking_enabled: bool = Field(default=False, alias="thinkingEnabled")
+    response_length: Literal["standard", "comprehensive"] = Field(default="standard", alias="responseLength")
+    images: list[ChatImage] = Field(default_factory=list)
 
     model_config = {
         "populate_by_name": True,
     }
+
+    @model_validator(mode="after")
+    def validate_content(self) -> "ChatRequest":
+        if not self.message.strip() and not self.images:
+            raise ValueError("Provide a message or at least one image.")
+        return self
 
 
 class ChatResponse(BaseModel):

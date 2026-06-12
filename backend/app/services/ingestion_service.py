@@ -13,7 +13,7 @@ from app.services.document_parser import DocumentParser, ParsedBlock
 from app.services.document_service import DocumentService, RetrievalChunkCatalogEntry
 from app.services.ingestion_chunk_builder import IngestionChunkBuilder
 from app.services.keyword_service import KeywordService
-from app.services.ollama_client import OllamaClient
+from app.services.nvidia_client import NvidiaClient
 from app.services.text_splitter import SemanticTextSplitter
 from app.services.topic_index_service import TopicIndexService
 
@@ -36,7 +36,7 @@ class IngestionService:
         *,
         document_service: DocumentService,
         keyword_service: KeywordService,
-        ollama_client: OllamaClient,
+        nvidia_client: NvidiaClient,
         text_splitter: SemanticTextSplitter,
         chroma_store: ChromaStore,
         topic_index_service: TopicIndexService,
@@ -45,7 +45,7 @@ class IngestionService:
     ) -> None:
         self._document_service = document_service
         self._keyword_service = keyword_service
-        self._ollama_client = ollama_client
+        self._nvidia_client = nvidia_client
         self._chroma_store = chroma_store
         self._topic_index_service = topic_index_service
         self._document_parser = document_parser
@@ -258,7 +258,7 @@ class IngestionService:
         chunk_texts: list[str],
         chunk_metadatas: list[dict[str, object]],
     ) -> None:
-        embeddings = await self._ollama_client.embed_texts(chunk_texts)
+        embeddings = await self._nvidia_client.embed_texts(chunk_texts)
         self._collection().upsert(
             ids=list(chunk_ids),
             documents=list(chunk_texts),
@@ -454,7 +454,12 @@ class IngestionService:
             for metadata, keywords in zip(chunk_metadatas, keyword_lists, strict=False)
         ]
         if keyword_enriched_metadatas:
-            self._collection().update(ids=chunk_ids, metadatas=keyword_enriched_metadatas)
+            batch_size = 2000
+            for i in range(0, len(chunk_ids), batch_size):
+                self._collection().update(
+                    ids=chunk_ids[i : i + batch_size],
+                    metadatas=keyword_enriched_metadatas[i : i + batch_size],
+                )
 
         self._document_service.update_document_progress(
             document_id,
@@ -489,7 +494,12 @@ class IngestionService:
             )
         ]
         if final_metadatas:
-            self._collection().update(ids=chunk_ids, metadatas=final_metadatas)
+            batch_size = 2000
+            for i in range(0, len(chunk_ids), batch_size):
+                self._collection().update(
+                    ids=chunk_ids[i : i + batch_size],
+                    metadatas=final_metadatas[i : i + batch_size],
+                )
 
         self._document_service.update_document_progress(
             document_id,

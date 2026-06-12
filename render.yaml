@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: rag-chatbot-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: RAG_NVIDIA_API_KEY
+        sync: false
+      - key: RAG_ALLOWED_ORIGINS
+        sync: false
+      - key: RAG_NVIDIA_BASE_URL
+        value: https://integrate.api.nvidia.com/v1
+      - key: RAG_NVIDIA_CHAT_MODEL
+        value: meta/llama-3.2-11b-vision-instruct
+      - key: RAG_RERANKER_MODEL
+        value: nvidia/nv-rerankqa-mistral-4b-v3
+      - key: RAG_EMBED_MODEL
+        value: nvidia/llama-nemotron-embed-1b-v2
+      - key: RAG_EMBEDDING_DIMENSIONS
+        value: "1024"
+      - key: RAG_DOCLING_OCR
+        value: "false"
+      - key: RAG_ENABLE_OCR
+        value: "false"
+      - key: RAG_DOCLING_TABLE_STRUCTURE
+        value: "false"

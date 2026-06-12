@@ -76,7 +76,7 @@ async def query_chat(
             question=request.message,
             session_id=request.session_id,
             collection_id=request.collection_id,
-            ollama_client=container.ollama_client,
+            nvidia_client=container.nvidia_client,
             user_id=user_id,
         )
         (
@@ -97,6 +97,8 @@ async def query_chat(
             cross_session_turn_count=cross_session_memory_used,
             web_search_enabled=request.web_search_enabled,
             thinking_enabled=thinking_enabled,
+            response_length=request.response_length,
+            images=request.images,
             user_id=user_id,
         )
         answer_trace = build_answer_trace(
@@ -133,7 +135,7 @@ async def query_chat(
                     model_thinking=model_thinking,
                     thinking_requested=recorded_thinking_requested,
                     cross_session_memory_used=cross_session_memory_used,
-                    ollama_client=container.ollama_client,
+                    nvidia_client=container.nvidia_client,
                     user_id=user_id,
                 )
             except Exception:  # noqa: BLE001
@@ -147,7 +149,7 @@ async def query_chat(
                         container.history_service.generate_title(
                             request.session_id,
                             request.message,
-                            container.ollama_client,
+                            container.nvidia_client,
                             user_id=user_id,
                         )
                     )
@@ -239,7 +241,7 @@ async def stream_chat(
                         question=request.message,
                         session_id=request.session_id,
                         collection_id=request.collection_id,
-                        ollama_client=container.ollama_client,
+                        nvidia_client=container.nvidia_client,
                         user_id=user_id,
                     )
                 )
@@ -262,6 +264,7 @@ async def stream_chat(
                         cross_session_turn_count=cross_session_memory_used,
                         web_search_enabled=request.web_search_enabled,
                         thinking_enabled=thinking_enabled,
+                        images=request.images,
                         user_id=user_id,
                     )
                 )
@@ -325,7 +328,7 @@ async def stream_chat(
                                 model_thinking=model_thinking,
                                 thinking_requested=recorded_thinking_requested,
                                 cross_session_memory_used=prepared.cross_session_turn_count,
-                                ollama_client=container.ollama_client,
+                                nvidia_client=container.nvidia_client,
                                 user_id=user_id,
                             )
                         except Exception:  # noqa: BLE001
@@ -342,7 +345,7 @@ async def stream_chat(
                                     container.history_service.generate_title(
                                         request.session_id,
                                         request.message,
-                                        container.ollama_client,
+                                        container.nvidia_client,
                                         user_id=user_id,
                                     )
                                 )
@@ -454,7 +457,7 @@ async def stream_chat(
                             model_thinking=model_thinking,
                             thinking_requested=recorded_thinking_requested,
                             cross_session_memory_used=prepared.cross_session_turn_count,
-                            ollama_client=container.ollama_client,
+                            nvidia_client=container.nvidia_client,
                             user_id=user_id,
                         )
                     except Exception:  # noqa: BLE001
@@ -471,7 +474,7 @@ async def stream_chat(
                                 container.history_service.generate_title(
                                     request.session_id,
                                     request.message,
-                                    container.ollama_client,
+                                    container.nvidia_client,
                                     user_id=user_id,
                                 )
                             )
@@ -556,10 +559,11 @@ async def _stream_finalized_answer(
         thinking_parts: list[str] = []
         emitted_response = False
         try:
-            async for delta in container.ollama_client.stream_answer(
+            async for delta in container.nvidia_client.stream_answer(
                 prompt=prepared.prompt,
                 system_prompt=prepared.system_prompt,
                 options=container.rag_service.generation_options_for(prepared),
+                images=prepared.images,
                 include_thinking=include_thinking,
                 timeout=container.rag_service.generation_timeout_for(include_thinking=include_thinking),
             ):

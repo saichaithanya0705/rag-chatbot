@@ -15,6 +15,18 @@ GROUNDING_SYSTEM_PROMPT = (
     "If you include a source marker, copy it exactly from the evidence blocks. "
     "Do not invent, repair, or paraphrase source markers."
 )
+COMPREHENSIVE_GROUNDING_SYSTEM_PROMPT = (
+    "Answer only from the supplied evidence blocks. "
+    "Provide a highly detailed, comprehensive, and exhaustive academic synthesis using the supplied evidence. "
+    "Structure your response with clear paragraphs, headings, or bullet points if appropriate. "
+    "Incorporate all relevant facts, clinical/technical details, examples, and distinctions present in the evidence. "
+    "Prefer PDF evidence when it directly answers the question. "
+    "Use web evidence only to fill gaps or answer current facts the PDFs do not cover. "
+    "If the evidence is insufficient, say so plainly. "
+    "Grounded prose matters more than repeating source markers. "
+    "If you include a source marker, copy it exactly from the evidence blocks. "
+    "Do not invent, repair, or paraphrase source markers."
+)
 UNGROUNDED_ANSWER_MESSAGE = "I couldn't ground a confident answer in the retrieved sources."
 PREVIEW_NOISE_LINE_PATTERN = re.compile(r"(?im)^\s*(?:page\s+\d+\b.*|[^\n\r]*copyright\b.*)$")
 
@@ -36,6 +48,10 @@ class GroundingFallbackAnswer(Generic[ContextT]):
 
 def grounding_system_prompt() -> str:
     return GROUNDING_SYSTEM_PROMPT
+
+
+def comprehensive_grounding_system_prompt() -> str:
+    return COMPREHENSIVE_GROUNDING_SYSTEM_PROMPT
 
 
 def no_context_message(*, web_search_enabled: bool, offline_warning: str | None) -> str:

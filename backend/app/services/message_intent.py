@@ -5,7 +5,7 @@ import logging
 from dataclasses import dataclass
 from typing import Literal
 
-from app.services.ollama_client import OllamaClient
+from app.services.nvidia_client import NvidiaClient
 
 LOGGER = logging.getLogger(__name__)
 INTENT_CLASSIFICATION_TIMEOUT_SECONDS = 8.0
@@ -24,7 +24,7 @@ class MessageIntent:
 async def classify_message_intent(
     message: str,
     *,
-    ollama_client: OllamaClient,
+    nvidia_client: NvidiaClient,
     include_thinking: bool = False,
 ) -> MessageIntent:
     cleaned_message = " ".join(message.strip().split())
@@ -50,7 +50,7 @@ async def classify_message_intent(
     )
 
     try:
-        raw_result = await ollama_client.generate_answer(
+        raw_result = await nvidia_client.generate_answer(
             prompt=prompt,
             system_prompt=system_prompt,
             options={

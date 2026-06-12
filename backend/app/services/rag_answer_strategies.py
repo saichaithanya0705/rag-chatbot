@@ -122,24 +122,28 @@ def interactive_generation_options(
     *,
     question: str,
     contexts: list[RetrievedContext],
+    response_length: str = "standard",
 ) -> dict[str, float | int]:
-    has_pdf_context = any(context.kind == "pdf" for context in contexts)
-    has_web_context = any(context.kind == "web" for context in contexts)
-    if has_pdf_context and has_web_context:
-        num_predict = 320
-    elif has_pdf_context:
-        num_predict = 384
+    if response_length == "comprehensive":
+        num_predict = 1024
     else:
-        num_predict = 256
+        has_pdf_context = any(context.kind == "pdf" for context in contexts)
+        has_web_context = any(context.kind == "web" for context in contexts)
+        if has_pdf_context and has_web_context:
+            num_predict = 448
+        elif has_pdf_context:
+            num_predict = 512
+        else:
+            num_predict = 256
 
-    if ONE_SENTENCE_PATTERN.search(question):
-        num_predict = min(num_predict, 96)
-    elif TWO_SENTENCE_PATTERN.search(question):
-        num_predict = min(num_predict, 128)
-    elif THREE_SENTENCE_PATTERN.search(question):
-        num_predict = min(num_predict, 176)
-    elif CONCISE_ANSWER_PATTERN.search(question):
-        num_predict = min(num_predict, 224)
+        if ONE_SENTENCE_PATTERN.search(question):
+            num_predict = min(num_predict, 96)
+        elif TWO_SENTENCE_PATTERN.search(question):
+            num_predict = min(num_predict, 128)
+        elif THREE_SENTENCE_PATTERN.search(question):
+            num_predict = min(num_predict, 176)
+        elif CONCISE_ANSWER_PATTERN.search(question):
+            num_predict = min(num_predict, 224)
 
     return {
         "temperature": 0.05,

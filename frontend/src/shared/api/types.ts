@@ -71,6 +71,7 @@ export interface Message {
   webSearchUsed?: boolean;
   offlineWarning?: string;
   sessionWarning?: string;
+  images?: Array<{ data: string; mimeType: string; url?: string }>;
 }
 
 export interface CollectionSummary {
@@ -146,6 +147,7 @@ export interface BootstrapPayload {
   pipelineDocuments: PipelineDocument[];
   knowledgeGraph: KnowledgeGraph;
   knowledgeBaseSummary: KnowledgeBaseSummary;
+  thinkingSupported: boolean;
 }
 
 export interface SendMessageInput {
@@ -154,6 +156,8 @@ export interface SendMessageInput {
   collectionId: string;
   webSearchEnabled: boolean;
   thinkingEnabled: boolean;
+  responseLength: "standard" | "comprehensive";
+  images?: Array<{ data: string; mimeType: string }>;
 }
 
 export interface StreamMessageResult {

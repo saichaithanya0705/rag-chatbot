@@ -33,6 +33,16 @@ class Database:
 
     def initialize(self) -> None:
         with self.connect() as connection:
+            # Upgrade legacy FTS index if it does not have porter stemming
+            try:
+                sql_schema = connection.execute(
+                    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'retrieval_chunks_fts'"
+                ).fetchone()
+                if sql_schema and "porter" not in sql_schema["sql"]:
+                    connection.execute("DROP TABLE retrieval_chunks_fts")
+            except Exception:
+                pass
+
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS sessions (
@@ -130,7 +140,7 @@ class Database:
                     text,
                     content='retrieval_chunks',
                     content_rowid='rowid',
-                    tokenize='unicode61 remove_diacritics 2'
+                    tokenize='porter unicode61 remove_diacritics 2'
                 );
                 """
             )

@@ -6,7 +6,9 @@ import type { Message, PipelineDocument } from "../../../shared/api/types";
 import {
   appendMessages,
   buildPendingAnswerTrace,
+  hasDraftSubmissionContent,
   normalizeCollectionId,
+  removeMessages,
   replaceMessage,
   resolveCollectionLabel,
   retainKnownSessionMessages,
@@ -107,6 +109,16 @@ test("message map helpers update targeted messages without mutating the previous
   const streamed = updateMessageContent(replaced, "sessionA", "assistant-3", "Streaming");
   assert.equal(streamed.sessionA[1].content, "Streaming");
   assert.equal(streamed.sessionB[0].content, "Untouched");
+
+  const removed = removeMessages(streamed, "sessionA", ["assistant-1"]);
+  assert.deepEqual(
+    removed.sessionA.map((message) => message.id),
+    ["assistant-3"],
+  );
+  assert.deepEqual(
+    streamed.sessionA.map((message) => message.id),
+    ["assistant-1", "assistant-3"],
+  );
 });
 
 test("collection helpers normalize unknown scopes and keep known scope labels", () => {
@@ -120,6 +132,9 @@ test("collection helpers normalize unknown scopes and keep known scope labels", 
   assert.equal(normalizeCollectionId(collections, null), "all-pdfs");
   assert.equal(resolveCollectionLabel(collections, "topic-a"), "Topic A");
   assert.equal(resolveCollectionLabel(collections, "missing"), "All PDFs");
+  assert.equal(hasDraftSubmissionContent("Question", 0), true);
+  assert.equal(hasDraftSubmissionContent("   ", 1), true);
+  assert.equal(hasDraftSubmissionContent("   ", 0), false);
   assert.match(buildPendingAnswerTrace("Topic A", true)[0].detail, /Live web lookup was enabled/);
 });
 
@@ -232,8 +247,12 @@ test("stable workbench action proxy delegates to the latest action ref", async (
     setDraftMessage: (nextValue) => calls.push(`${label}:setDraftMessage:${nextValue}`),
     toggleWebSearch: () => calls.push(`${label}:toggleWebSearch`),
     toggleThinking: () => calls.push(`${label}:toggleThinking`),
+    toggleDetailedAnswer: () => calls.push(`${label}:toggleDetailedAnswer`),
     sendMessage: async (text) => {
       calls.push(`${label}:sendMessage:${text}`);
+    },
+    stopMessage: () => {
+      calls.push(`${label}:stopMessage`);
     },
     openPdfPreview: async (citation) => {
       calls.push(`${label}:openPdfPreview:${citation.id}`);
@@ -255,6 +274,15 @@ test("stable workbench action proxy delegates to the latest action ref", async (
       calls.push(`${label}:removePipelineDocument:${documentId}`);
     },
     clearToast: () => calls.push(`${label}:clearToast`),
+    addDraftImage: (image) => {
+      calls.push(`${label}:addDraftImage:${image.url}`);
+    },
+    removeDraftImage: (index) => {
+      calls.push(`${label}:removeDraftImage:${index}`);
+    },
+    clearDraftImages: () => {
+      calls.push(`${label}:clearDraftImages`);
+    },
   });
   const actionRef = { current: makeActions("initial") };
   const proxy = makeWorkbenchActionProxy(actionRef);
@@ -263,7 +291,8 @@ test("stable workbench action proxy delegates to the latest action ref", async (
 
   actionRef.current = makeActions("latest");
   proxy.toggleSidebar();
+  proxy.stopMessage();
   await proxy.selectSession("session-1");
 
-  assert.deepEqual(calls, ["latest:toggleSidebar", "latest:selectSession:session-1"]);
+  assert.deepEqual(calls, ["latest:toggleSidebar", "latest:stopMessage", "latest:selectSession:session-1"]);
 });

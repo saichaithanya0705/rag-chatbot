@@ -8,11 +8,11 @@ from typing import Sequence
 import httpx
 
 from app.core.chroma_store import ChromaStore
-from app.models.schemas import CitationPayload, ToolCallPayload
+from app.models.schemas import CitationPayload, ToolCallPayload, ChatImage
 from app.services.document_service import DocumentService
 from app.services.kg_manager import KgManager
 from app.services.message_intent import classify_message_intent
-from app.services.ollama_client import OllamaClient, OllamaGenerationResult
+from app.services.nvidia_client import NvidiaClient, NvidiaGenerationResult
 from app.services.query_rewrite_service import QueryRewriteService
 from app.services.rag_answer_text import (
     clean_model_thinking_summary,
@@ -36,6 +36,7 @@ from app.services.rag_citations import (
     pdf_context_from_chunk,
 )
 from app.services.rag_grounding import (
+    comprehensive_grounding_system_prompt,
     grounding_system_prompt,
     no_context_message,
     trim_text,
@@ -68,7 +69,7 @@ class RagService:
     def __init__(
         self,
         *,
-        ollama_client: OllamaClient,
+        nvidia_client: NvidiaClient,
         chroma_store: ChromaStore,
         document_service: DocumentService,
         kg_manager: KgManager,
@@ -79,7 +80,7 @@ class RagService:
         top_k: int,
         web_search_score_threshold: float,
     ) -> None:
-        self._ollama_client = ollama_client
+        self._nvidia_client = nvidia_client
         self._query_rewrite_service = query_rewrite_service
         self._web_search_service = web_search_service
         self._retrieval_engine = RagRetrievalEngine(
@@ -101,6 +102,8 @@ class RagService:
         cross_session_turn_count: int = 0,
         web_search_enabled: bool = True,
         thinking_enabled: bool = False,
+        response_length: str = "standard",
+        images: list[ChatImage] | None = None,
         user_id: str,
     ) -> tuple[
         str,
@@ -121,6 +124,8 @@ class RagService:
             cross_session_turn_count=cross_session_turn_count,
             web_search_enabled=web_search_enabled,
             thinking_enabled=thinking_enabled,
+            response_length=response_length,
+            images=images,
             user_id=user_id,
         )
         if prepared.shortcut_answer is not None:
@@ -181,13 +186,15 @@ class RagService:
                 include_thinking,
             )
             try:
-                raw_answer = await self._ollama_client.generate_answer(
+                raw_answer = await self._nvidia_client.generate_answer(
                     prompt=prepared.prompt,
                     system_prompt=prepared.system_prompt,
                     options=interactive_generation_options(
                         question=prepared.question,
                         contexts=prepared.contexts,
+                        response_length=getattr(prepared, "response_length", "standard"),
                     ),
+                    images=prepared.images,
                     include_thinking=include_thinking,
                     timeout=(
                         INTERACTIVE_THINKING_GENERATE_TIMEOUT_SECONDS
@@ -283,6 +290,47 @@ class RagService:
             raise last_error
         raise RuntimeError("Answer generation ended without a result.")
 
+    def _parse_images_ocr(self, images: list[ChatImage] | None) -> str:
+        if not images:
+            return ""
+        
+        extracted_texts = []
+        import tempfile
+        import base64
+        try:
+            from docling.document_converter import DocumentConverter
+            
+            converter = DocumentConverter()
+            for idx, img in enumerate(images):
+                try:
+                    img_data = base64.b64decode(img.data)
+                    ext = ".png"
+                    if "jpeg" in img.mime_type or "jpg" in img.mime_type:
+                        ext = ".jpg"
+                    
+                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp_file:
+                        tmp_file.write(img_data)
+                        tmp_path = tmp_file.name
+                    
+                    try:
+                        result = converter.convert(tmp_path)
+                        text = result.document.export_to_markdown()
+                        if text.strip():
+                            extracted_texts.append(f"Image {idx+1} (OCR Content):\n{text.strip()}")
+                    finally:
+                        import os
+                        if os.path.exists(tmp_path):
+                            os.remove(tmp_path)
+                except Exception as e:
+                    LOGGER.warning("Failed to run OCR on image %d: %s", idx, e, exc_info=True)
+        except Exception as e:
+            LOGGER.warning("Failed to initialize Docling for image OCR: %s", e, exc_info=True)
+            
+        if not extracted_texts:
+            return ""
+            
+        return "\n\n---\n\n".join(extracted_texts)
+
     async def prepare_answer(
         self,
         question: str,
@@ -292,11 +340,17 @@ class RagService:
         cross_session_turn_count: int = 0,
         web_search_enabled: bool = True,
         thinking_enabled: bool = False,
+        response_length: str = "standard",
+        images: list[ChatImage] | None = None,
         user_id: str,
     ) -> PreparedAnswer:
+        ocr_text = self._parse_images_ocr(images)
+        if ocr_text:
+            question = f"{question}\n\n[Parsed Image OCR Content:\n{ocr_text}]"
+
         message_intent = await classify_message_intent(
             question,
-            ollama_client=self._ollama_client,
+            nvidia_client=self._nvidia_client,
             include_thinking=thinking_enabled,
         )
         intent_reasoning_segments = self._reasoning_segments_from(
@@ -314,10 +368,27 @@ class RagService:
                 response_mode="conversation",
                 trace_detail=message_intent.trace_detail,
                 reasoning_segments=intent_reasoning_segments,
+                images=images or [],
             )
 
         has_local_context = self._retrieval_engine.has_local_context(collection_id, user_id=user_id)
         if not has_local_context and not web_search_enabled:
+            if images:
+                prompt = f"Please analyze the attached image and answer the user query: {question}"
+                system_prompt = (
+                    "You are a helpful assistant with vision capabilities. "
+                    "Analyze the attached images and the parsed OCR text, and answer the user's question accurately."
+                )
+                return PreparedAnswer(
+                    question=question,
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    contexts=[],
+                    cross_session_turn_count=cross_session_turn_count,
+                    reasoning_segments=intent_reasoning_segments,
+                    response_length=response_length,
+                    images=images or [],
+                )
             return PreparedAnswer(
                 question=question,
                 prompt="",
@@ -329,6 +400,7 @@ class RagService:
                 ),
                 cross_session_turn_count=cross_session_turn_count,
                 reasoning_segments=intent_reasoning_segments,
+                images=images or [],
             )
 
         retrieval_query = question
@@ -357,6 +429,7 @@ class RagService:
                 shortcut_citations=[citation_from_context(shortcut_context)],
                 cross_session_turn_count=cross_session_turn_count,
                 reasoning_segments=intent_reasoning_segments,
+                images=images or [],
             )
 
         comparison_contexts = self._retrieval_engine.comparison_contexts(
@@ -380,13 +453,19 @@ class RagService:
                     shortcut_citations=shortcut_citations,
                     cross_session_turn_count=cross_session_turn_count,
                     reasoning_segments=intent_reasoning_segments,
+                    images=images or [],
                 )
             prompt = build_prompt(
                 question=question,
                 contexts=comparison_contexts,
                 history_messages=history_messages or [],
+                response_length=response_length,
             )
-            system_prompt = grounding_system_prompt()
+            system_prompt = (
+                comprehensive_grounding_system_prompt()
+                if response_length == "comprehensive"
+                else grounding_system_prompt()
+            )
             return PreparedAnswer(
                 question=question,
                 prompt=prompt,
@@ -394,13 +473,22 @@ class RagService:
                 contexts=comparison_contexts,
                 cross_session_turn_count=cross_session_turn_count,
                 reasoning_segments=intent_reasoning_segments,
+                response_length=response_length,
+                images=images or [],
             )
+
+        actual_top_k = (
+            self._retrieval_engine.top_k * 2
+            if response_length == "comprehensive"
+            else self._retrieval_engine.top_k
+        )
 
         if has_local_context:
             try:
                 query_embedding = (
-                    await self._ollama_client.embed_texts(
+                    await self._nvidia_client.embed_texts(
                         [retrieval_query],
+                        input_type="query",
                         timeout=INTERACTIVE_RETRIEVAL_EMBED_TIMEOUT_SECONDS,
                     )
                 )[0]
@@ -414,6 +502,7 @@ class RagService:
                     retrieval_query,
                     collection_id,
                     user_id=user_id,
+                    top_k=actual_top_k,
                 )
             else:
                 retrieval = await asyncio.to_thread(
@@ -422,6 +511,7 @@ class RagService:
                     query_embedding,
                     collection_id,
                     user_id=user_id,
+                    top_k=actual_top_k,
                 )
                 if not retrieval.chunks and collection_id == "all-pdfs":
                     retrieval = await asyncio.to_thread(
@@ -429,6 +519,7 @@ class RagService:
                         retrieval_query,
                         query_embedding,
                         user_id=user_id,
+                        top_k=actual_top_k,
                     )
 
         pdf_contexts = [pdf_context_from_chunk(chunk) for chunk in retrieval.chunks]
@@ -460,9 +551,28 @@ class RagService:
         contexts = select_contexts(
             pdf_contexts,
             web_contexts,
-            top_k=self._retrieval_engine.top_k,
+            top_k=actual_top_k,
         )
         if not contexts:
+            if images:
+                prompt = f"Please analyze the attached image and answer the user query: {question}"
+                system_prompt = (
+                    "You are a helpful assistant with vision capabilities. "
+                    "Analyze the attached images and the parsed OCR text, and answer the user's question accurately."
+                )
+                return PreparedAnswer(
+                    question=question,
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    contexts=[],
+                    tool_call=tool_call,
+                    web_search_used=web_search_used,
+                    offline_warning=offline_warning,
+                    cross_session_turn_count=cross_session_turn_count,
+                    reasoning_segments=intent_reasoning_segments,
+                    response_length=response_length,
+                    images=images or [],
+                )
             return PreparedAnswer(
                 question=question,
                 prompt="",
@@ -477,6 +587,8 @@ class RagService:
                 offline_warning=offline_warning,
                 cross_session_turn_count=cross_session_turn_count,
                 reasoning_segments=intent_reasoning_segments,
+                response_length=response_length,
+                images=images or [],
             )
 
         shortcut = direct_context_shortcut(question, contexts)
@@ -493,14 +605,21 @@ class RagService:
                 offline_warning=offline_warning,
                 cross_session_turn_count=cross_session_turn_count,
                 reasoning_segments=intent_reasoning_segments,
+                response_length=response_length,
+                images=images or [],
             )
 
         prompt = build_prompt(
             question=question,
             contexts=contexts,
             history_messages=history_messages or [],
+            response_length=response_length,
         )
-        system_prompt = grounding_system_prompt()
+        system_prompt = (
+            comprehensive_grounding_system_prompt()
+            if response_length == "comprehensive"
+            else grounding_system_prompt()
+        )
         return PreparedAnswer(
             question=question,
             prompt=prompt,
@@ -511,6 +630,8 @@ class RagService:
             offline_warning=offline_warning,
             cross_session_turn_count=cross_session_turn_count,
             reasoning_segments=intent_reasoning_segments,
+            response_length=response_length,
+            images=images or [],
         )
 
     def finalize_answer(
@@ -543,7 +664,7 @@ class RagService:
 
     def _finalize_generation_result(
         self,
-        raw_answer: OllamaGenerationResult,
+        raw_answer: NvidiaGenerationResult,
         contexts: list[RetrievedContext],
         *,
         include_thinking: bool,
@@ -616,7 +737,7 @@ class RagService:
         )
 
         try:
-            summary = await self._ollama_client.generate_answer(
+            summary = await self._nvidia_client.generate_answer(
                 prompt=prompt,
                 system_prompt=system_prompt,
                 options={

@@ -83,10 +83,8 @@ function getDisplayTraceItems(message: Message) {
 function getModelThinking(message: Message) {
   const content = message.modelThinking?.trim();
   return content && content.length > 0 ? content : null;
-}
-
-function showModelThinkingPanel(message: Message) {
-  return Boolean(message.thinkingRequested);
+}function showModelThinkingPanel(message: Message, thinkingEnabled: boolean) {
+  return thinkingEnabled && Boolean(message.thinkingRequested);
 }
 
 function hasVisibleAssistantContent(message: Message) {
@@ -119,6 +117,76 @@ function EmptyStateIllustration() {
         fill="var(--accent)"
       />
     </svg>
+  );
+}
+
+function CopyMessageButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      className={styles.copyMessageBtn}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "6px",
+        background: "none",
+        border: "none",
+        color: copied ? "var(--success)" : "var(--text-subtle-aa)",
+        cursor: "pointer",
+        fontSize: "11px",
+        fontWeight: 500,
+        padding: "4px 8px",
+        borderRadius: "4px",
+        transition: "all var(--transition-fast)",
+      }}
+      type="button"
+      title="Copy response"
+    >
+      {copied ? (
+        <>
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ color: "var(--success)" }}
+          >
+            <path d="M20 6 9 17l-5-5" />
+          </svg>
+          <span style={{ color: "var(--success)" }}>Copied!</span>
+        </>
+      ) : (
+        <>
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+          </svg>
+          <span>Copy response</span>
+        </>
+      )}
+    </button>
   );
 }
 
@@ -211,56 +279,100 @@ export function MessageThread() {
             className={cn(styles.msg, message.role === "user" ? styles.msgUser : styles.msgBot)}
             key={message.id}
           >
-            {getDisplayTraceItems(message).length > 0 ? (
-              <details className={styles.toolCall}>
-                <summary className={styles.toolCallSummary}>
-                  <span className={styles.toolCallLabel}>Answer trace</span>
-                  <span>
-                    {message.status === "thinking"
-                      ? "View current retrieval steps"
-                      : "View how this answer was grounded"}
-                  </span>
-                </summary>
-                <div className={styles.toolCallBody}>
-                  {getDisplayTraceItems(message).map((item) => (
-                    <p className={styles.toolCallItem} key={item}>
-                      {item}
-                    </p>
-                  ))}
+            {message.role === "assistant" && (
+              <div className={styles.botMessageHeader}>
+                <div className={styles.botAvatarContainer}>
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={styles.botAvatarIcon}
+                  >
+                    <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+                  </svg>
                 </div>
-              </details>
-            ) : null}
+                <span className={styles.botName}>RAG Assistant</span>
+                <span className={styles.botModelBadge}>NVIDIA NIM</span>
+              </div>
+            )}
 
-            {showModelThinkingPanel(message) ? (
-              <details className={cn(styles.toolCall, styles.modelThinkingPanel)}>
-                <summary className={styles.toolCallSummary}>
-                  <span className={styles.toolCallLabel}>Model thinking</span>
-                  <span>
-                    {message.status === "thinking"
-                      ? "Preparing reasoning summary"
-                      : getModelThinking(message)
-                        ? "View reasoning summary"
-                        : "Reasoning summary unavailable"}
-                  </span>
-                </summary>
-                <div className={cn(styles.toolCallBody, styles.modelThinkingBody)}>
-                  {getModelThinking(message) ? (
-                    <MessageMarkdown content={getModelThinking(message) ?? ""} />
-                  ) : (
-                    <p className={styles.toolCallItem}>
-                      {message.status === "thinking"
-                        ? "Preparing the reasoning summary for this response."
-                        : "The backend could not prepare a reasoning summary for this response."}
-                    </p>
-                  )}
-                </div>
-              </details>
-            ) : null}
+            {message.role === "user" && (
+              <div className={styles.userMessageHeader}>
+                <span className={styles.userName}>You</span>
+              </div>
+            )}
 
             <div className={cn(styles.bubble, message.status === "thinking" && styles.thinkingBubble)}>
               {message.role === "assistant" ? (
                 hasVisibleAssistantContent(message) ? (
-                  <MessageMarkdown content={message.content} />
+                  <>
+                    {/* Compact Search Process inside the bubble */}
+                    {getDisplayTraceItems(message).length > 0 && (
+                      <details className={styles.compactTraceDetails}>
+                        <summary className={styles.compactTraceSummary}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M12 16v-4"/>
+                            <path d="M12 8h.01"/>
+                          </svg>
+                          <span>Search Trace ({getDisplayTraceItems(message).length} steps)</span>
+                        </summary>
+                        <div className={styles.compactTraceBody}>
+                          {getDisplayTraceItems(message).map((item) => (
+                            <div className={styles.compactTraceItem} key={item}>
+                              • {item}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+
+                    {/* Collapsible Model Thinking Process inside the bubble */}
+                    {showModelThinkingPanel(message, state.thinkingEnabled) && (
+                      <details className={styles.modelThinkingDetails} open={message.status === "thinking"}>
+                        <summary className={styles.modelThinkingSummary}>
+                          <div className={styles.modelThinkingHeader}>
+                            <svg
+                              width="11"
+                              height="11"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className={styles.bulbIcon}
+                            >
+                              <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .5 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" />
+                              <path d="M9 18h6" />
+                              <path d="M10 22h4" />
+                            </svg>
+                            <span>
+                              {message.status === "thinking"
+                                ? "Thinking..."
+                                : "Thinking Process"}
+                            </span>
+                          </div>
+                        </summary>
+                        <div className={styles.modelThinkingContent}>
+                          {getModelThinking(message) ? (
+                            <MessageMarkdown content={getModelThinking(message) ?? ""} />
+                          ) : (
+                            <p style={{ margin: 0, opacity: 0.7 }}>
+                              Preparing reasoning summary...
+                            </p>
+                          )}
+                        </div>
+                      </details>
+                    )}
+
+                    <MessageMarkdown content={message.content} citations={message.citations} />
+                  </>
                 ) : (
                   <div className={styles.loadingDots}>
                     <span className={styles.dot} />
@@ -269,9 +381,29 @@ export function MessageThread() {
                   </div>
                 )
               ) : (
-                message.content
+                <div className={styles.userBubbleContent}>
+                  {message.images && message.images.length > 0 && (
+                    <div className={styles.messageImageGrid}>
+                      {message.images.map((img, index) => (
+                        <img
+                          key={index}
+                          src={img.url || `data:${img.mimeType};base64,${img.data}`}
+                          alt="User upload"
+                          className={styles.messageImage}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {message.content && <div className={styles.userBubbleText}>{message.content}</div>}
+                </div>
               )}
             </div>
+
+            {message.role === "assistant" && hasVisibleAssistantContent(message) ? (
+              <div className={styles.assistantActionsRow}>
+                <CopyMessageButton text={message.content} />
+              </div>
+            ) : null}
 
             {message.citations.length > 0 ? (
               <div className={styles.citations}>

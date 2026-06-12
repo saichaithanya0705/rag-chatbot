@@ -345,6 +345,14 @@
   background: var(--accent-strong);
 }
 
+.stopBtn {
+  background: var(--danger);
+}
+
+.stopBtn:hover {
+  background: #c53c3b;
+}
+
 .sendBtn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -352,6 +360,10 @@
 
 .sendBtn:disabled:hover {
   background: var(--accent);
+}
+
+.stopBtn:disabled:hover {
+  background: var(--danger);
 }
 
 .inputHint {
@@ -521,4 +533,92 @@
     min-height: 24px;
     min-width: 40px;
   }
+}
+
+.hiddenInput {
+  display: none;
+}
+
+.attachBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 0.5px solid var(--border-strong);
+  background: var(--surface-base);
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.attachBtn:hover {
+  background: var(--surface-muted);
+  color: var(--text-strong);
+  border-color: var(--accent);
+}
+
+.attachBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.draftImagesContainer {
+  display: flex;
+  gap: 12px;
+  padding: 8px 4px;
+  margin-bottom: 8px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.draftImageCard {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  flex-shrink: 0;
+  overflow: hidden;
+  box-shadow: var(--shadow-soft);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+}
+
+.draftImageCard:hover {
+  transform: translateY(-2px) scale(1.04);
+  border-color: var(--accent-border);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.draftImageThumbnail {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.removeDraftBtn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.75);
+  color: #ffffff;
+  border: none;
+  font-size: 13px;
+  font-weight: bold;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.removeDraftBtn:hover {
+  background: rgba(239, 68, 68, 0.95);
 }

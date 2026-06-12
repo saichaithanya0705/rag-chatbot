@@ -85,6 +85,8 @@ class PreparedAnswer:
     response_mode: str = "grounded"
     trace_detail: str | None = None
     reasoning_segments: list[str] = field(default_factory=list)
+    response_length: str = "standard"
+    images: list[Any] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

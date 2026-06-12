@@ -312,3 +312,239 @@
     max-width: 92%;
   }
 }
+
+.userBubbleContent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.userBubbleText {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.messageImageGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.messageImage {
+  max-width: 100%;
+  width: auto;
+  max-height: 200px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  object-fit: contain;
+  box-shadow: var(--shadow-soft);
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+
+.messageImage:hover {
+  opacity: 0.95;
+  transform: scale(1.015);
+  cursor: zoom-in;
+}
+
+/* Premium Bot & User Message Headers */
+.botMessageHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  align-self: flex-start;
+  user-select: none;
+}
+
+.botAvatarContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(127, 119, 221, 0.24);
+}
+
+.botAvatarIcon {
+  animation: floatIcon 3s ease-in-out infinite;
+}
+
+@keyframes floatIcon {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-0.5px) scale(1.05); }
+}
+
+.botName {
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.botModelBadge {
+  font-size: 9px;
+  background: var(--surface-base);
+  border: 0.5px solid var(--border-soft);
+  color: var(--text-subtle-aa);
+  border-radius: 4px;
+  padding: 1px 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-weight: 600;
+}
+
+.userMessageHeader {
+  display: flex;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 12px;
+  align-self: flex-end;
+  user-select: none;
+}
+
+.userName {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.assistantActionsRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+  align-self: flex-start;
+  padding-left: 2px;
+  user-select: none;
+}
+
+.copyMessageBtn {
+  opacity: 0.65;
+  transition: all var(--transition-fast);
+}
+
+.copyMessageBtn:hover {
+  opacity: 1;
+  background: var(--surface-base) !important;
+  box-shadow: var(--shadow-soft);
+}
+
+/* Premium Collapsible Processes inside Assistant Bubble */
+.compactTraceDetails {
+  display: block;
+  margin-bottom: 10px;
+  border-left: 2.5px solid var(--border-strong);
+  background: var(--surface-soft);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 11px;
+  border: 0.5px solid var(--border-soft);
+  box-shadow: var(--shadow-soft);
+}
+
+.compactTraceSummary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.compactTraceSummary::-webkit-details-marker {
+  display: none;
+}
+
+.compactTraceSummary svg {
+  color: var(--text-subtle-aa);
+  flex-shrink: 0;
+}
+
+.compactTraceBody {
+  margin-top: 6px;
+  padding-left: 4px;
+  color: var(--text-subtle-aa);
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.compactTraceItem {
+  font-family: var(--font-body);
+}
+
+.modelThinkingDetails {
+  display: block;
+  margin-bottom: 12px;
+  border-left: 2.5px solid var(--accent);
+  background: rgba(127, 119, 221, 0.04);
+  border-radius: 6px;
+  padding: 8px 12px;
+  border: 0.5px solid rgba(127, 119, 221, 0.08);
+  box-shadow: var(--shadow-soft);
+}
+
+.modelThinkingSummary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.modelThinkingSummary::-webkit-details-marker {
+  display: none;
+}
+
+.modelThinkingHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+
+.bulbIcon {
+  color: var(--accent);
+  flex-shrink: 0;
+  animation: pulseBulb 2s infinite ease-in-out;
+}
+
+@keyframes pulseBulb {
+  0%, 100% { opacity: 0.8; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+.modelThinkingContent {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-subtle-aa);
+  font-style: italic;
+  line-height: 1.55;
+}
+
+.modelThinkingContent :global(h1),
+.modelThinkingContent :global(h2),
+.modelThinkingContent :global(h3),
+.modelThinkingContent :global(p),
+.modelThinkingContent :global(ul),
+.modelThinkingContent :global(ol) {
+  margin: 0 0 8px;
+}
+
+.modelThinkingContent :global(ul),
+.modelThinkingContent :global(ol) {
+  padding-left: 18px;
+}
+
+.modelThinkingContent :global(li + li) {
+  margin-top: 5px;
+}
+
+

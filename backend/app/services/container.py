@@ -14,7 +14,7 @@ from app.services.ingestion_dispatcher import IngestionDispatcher
 from app.services.ingestion_service import IngestionService
 from app.services.kg_manager import KgManager
 from app.services.keyword_service import KeywordService
-from app.services.ollama_client import OllamaClient
+from app.services.nvidia_client import NvidiaClient
 from app.services.query_rewrite_service import QueryRewriteService
 from app.services.rag_service import RagService
 from app.services.reranker_service import RerankerService
@@ -28,7 +28,7 @@ class ServiceContainer:
     settings: Settings
     database: Database
     chroma_store: ChromaStore
-    ollama_client: OllamaClient
+    nvidia_client: NvidiaClient
     keyword_service: KeywordService
     document_service: DocumentService
     document_preview_service: DocumentPreviewService
@@ -46,7 +46,7 @@ class ServiceContainer:
     async def aclose(self) -> None:
         await self.keyword_service.aclose()
         await self.web_search_service.aclose()
-        await self.ollama_client.aclose()
+        await self.nvidia_client.aclose()
 
 
 def build_container(settings: Settings) -> ServiceContainer:
@@ -61,10 +61,12 @@ def build_container(settings: Settings) -> ServiceContainer:
         model=settings.embed_model,
         dimensions=settings.embedding_dimensions,
     ).reconcile()
-    ollama_client = OllamaClient(
-        base_url=settings.ollama_base_url,
+    nvidia_client = NvidiaClient(
+        base_url=settings.nvidia_base_url,
         embed_model=settings.embed_model,
         chat_model=settings.chat_model,
+        nvidia_base_url=settings.nvidia_base_url,
+        nvidia_api_key=settings.nvidia_api_key,
         expected_embedding_dimensions=settings.embedding_dimensions,
     )
     document_service = DocumentService(database=database, chroma_store=chroma_store)
@@ -88,15 +90,19 @@ def build_container(settings: Settings) -> ServiceContainer:
         artifacts_path=settings.docling_artifacts_dir,
     )
     ingestion_dispatcher = IngestionDispatcher(settings=settings)
-    reranker_service = RerankerService(settings.reranker_model)
+    reranker_service = RerankerService(
+        settings.reranker_model,
+        nvidia_base_url=settings.nvidia_base_url,
+        nvidia_api_key=settings.nvidia_api_key,
+    )
     web_search_service = WebSearchService(
         backend=settings.web_search_backend,
         region=settings.web_search_region,
         max_results=settings.web_search_max_results,
     )
-    query_rewrite_service = QueryRewriteService(ollama_client=ollama_client)
+    query_rewrite_service = QueryRewriteService(nvidia_client=nvidia_client)
     keyword_service = KeywordService(
-        base_url=settings.ollama_base_url,
+        base_url=settings.nvidia_base_url,
         embed_model=settings.embed_model,
         chat_model=settings.chat_model,
     )
@@ -107,14 +113,14 @@ def build_container(settings: Settings) -> ServiceContainer:
     ingestion_service = IngestionService(
         document_service=document_service,
         keyword_service=keyword_service,
-        ollama_client=ollama_client,
+        nvidia_client=nvidia_client,
         text_splitter=text_splitter,
         chroma_store=chroma_store,
         topic_index_service=topic_index_service,
         document_parser=document_parser,
     )
     rag_service = RagService(
-        ollama_client=ollama_client,
+        nvidia_client=nvidia_client,
         chroma_store=chroma_store,
         document_service=document_service,
         kg_manager=kg_manager,
@@ -129,7 +135,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         settings=settings,
         database=database,
         chroma_store=chroma_store,
-        ollama_client=ollama_client,
+        nvidia_client=nvidia_client,
         keyword_service=keyword_service,
         document_service=document_service,
         document_preview_service=document_preview_service,

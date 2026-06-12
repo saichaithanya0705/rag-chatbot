@@ -60,11 +60,13 @@ def rerank_pool_limit(
 ) -> int:
     if not ordered_candidates:
         return 0
+    min_rerank = 12 if top_k >= 5 else MIN_INTERACTIVE_RERANK_CANDIDATES
+    max_rerank = 16 if top_k >= 5 else MAX_INTERACTIVE_RERANK_CANDIDATES
     if comparison_subqueries(question):
-        return min(len(ordered_candidates), max(top_k * 2, MAX_INTERACTIVE_RERANK_CANDIDATES))
+        return min(len(ordered_candidates), max(top_k * 2, max_rerank))
     return min(
         len(ordered_candidates),
-        max(top_k + 1, MIN_INTERACTIVE_RERANK_CANDIDATES),
+        max(top_k + 1, min_rerank),
     )
 
 

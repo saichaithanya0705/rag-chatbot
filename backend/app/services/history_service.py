@@ -17,7 +17,7 @@ from app.services.history_serialization import (
 )
 from app.services.history_memory_store import HistoryMemoryStore, MemoryTurn
 from app.services.history_turn_persistence import persist_turn_records
-from app.services.ollama_client import OllamaClient
+from app.services.nvidia_client import NvidiaClient
 
 LOGGER = logging.getLogger(__name__)
 INTERACTIVE_MEMORY_EMBED_TIMEOUT_SECONDS = 20.0
@@ -283,7 +283,7 @@ class HistoryService:
         question: str,
         session_id: str | None,
         collection_id: str,
-        ollama_client: OllamaClient,
+        nvidia_client: NvidiaClient,
         user_id: str,
     ) -> tuple[list[dict[str, str]], int]:
         if not looks_context_dependent(question):
@@ -305,7 +305,7 @@ class HistoryService:
                 session_id=session_id,
                 collection_id=collection_id,
                 user_id=user_id,
-                ollama_client=ollama_client,
+                nvidia_client=nvidia_client,
                 limit=6 if self._cross_session_memory_enabled else 3,
             )
         except Exception:  # noqa: BLE001
@@ -383,7 +383,7 @@ class HistoryService:
         offline_warning: str | None,
         model_thinking: str | None,
         thinking_requested: bool,
-        ollama_client: OllamaClient,
+        nvidia_client: NvidiaClient,
         cross_session_memory_used: int = 0,
         user_id: str,
     ) -> None:
@@ -428,7 +428,7 @@ class HistoryService:
                 user_id=user_id,
                 user_content=user_content,
                 assistant_content=assistant_content,
-                ollama_client=ollama_client,
+                nvidia_client=nvidia_client,
             )
         )
         self._background_memory_tasks.add(memory_task)
@@ -470,7 +470,7 @@ class HistoryService:
         self,
         session_id: str,
         first_message: str,
-        ollama_client: OllamaClient,
+        nvidia_client: NvidiaClient,
         *,
         user_id: str,
     ) -> str | None:
@@ -486,7 +486,7 @@ class HistoryService:
         fallback_title_value = fallback_title(first_message)
 
         try:
-            raw_title = await ollama_client.generate_answer(
+            raw_title = await nvidia_client.generate_answer(
                 prompt=prompt,
                 system_prompt=system_prompt,
                 options={
@@ -533,12 +533,13 @@ class HistoryService:
         session_id: str | None,
         collection_id: str,
         user_id: str,
-        ollama_client: OllamaClient,
+        nvidia_client: NvidiaClient,
         limit: int,
     ) -> list[MemoryTurn]:
         query_embedding = (
-            await ollama_client.embed_texts(
+            await nvidia_client.embed_texts(
                 [question],
+                input_type="query",
                 timeout=INTERACTIVE_MEMORY_EMBED_TIMEOUT_SECONDS,
             )
         )[0]
@@ -564,10 +565,10 @@ class HistoryService:
         user_id: str,
         user_content: str,
         assistant_content: str,
-        ollama_client: OllamaClient,
+        nvidia_client: NvidiaClient,
     ) -> None:
         memory_text = f"User: {user_content}"
-        memory_embedding = (await ollama_client.embed_texts([memory_text]))[0]
+        memory_embedding = (await nvidia_client.embed_texts([memory_text], input_type="passage"))[0]
         await asyncio.to_thread(
             self._memory_store.upsert_turn,
             memory_id=memory_id,

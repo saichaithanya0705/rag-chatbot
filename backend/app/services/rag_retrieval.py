@@ -76,7 +76,9 @@ class RagRetrievalEngine:
         collection_id: str,
         *,
         user_id: str,
+        top_k: int | None = None,
     ) -> RetrievalResult:
+        actual_top_k = top_k if top_k is not None else self._top_k
         target_collections = self._resolve_target_collections(query_embedding, collection_id, user_id=user_id)
         candidate_map: dict[str, CandidateChunk] = {}
 
@@ -96,7 +98,7 @@ class RagRetrievalEngine:
             target_collections=target_collections,
             candidate_count=len(candidate_map),
             collection_name=self._collection_name,
-            top_k=self._top_k,
+            top_k=actual_top_k,
         )
         if include_flat:
             for candidate in self._hybrid_candidates_for_collection(
@@ -136,7 +138,7 @@ class RagRetrievalEngine:
         candidate_limit = rerank_pool_limit(
             question=question,
             ordered_candidates=fused_candidates,
-            top_k=self._top_k,
+            top_k=actual_top_k,
         )
         fused_candidates = select_rerank_candidate_pool(
             ordered_candidates=fused_candidates,
@@ -150,7 +152,7 @@ class RagRetrievalEngine:
         selected_chunks = select_final_chunks(
             ranked_candidates=ranked_candidates,
             coverage_groups=coverage_groups,
-            top_k=self._top_k,
+            top_k=actual_top_k,
         )
 
         return RetrievalResult(
@@ -167,13 +169,15 @@ class RagRetrievalEngine:
         collection_id: str,
         *,
         user_id: str,
+        top_k: int | None = None,
     ) -> RetrievalResult:
+        actual_top_k = top_k if top_k is not None else self._top_k
         target_collection = self._collection_name if collection_id == "all-pdfs" else collection_id
         candidates = self._lexical_candidates_for_collection(
             question,
             target_collection,
             user_id=user_id,
-            limit=max(self._top_k * 4, 16),
+            limit=max(actual_top_k * 4, 16),
         )
         candidate_map = {candidate.chunk_id: candidate for candidate in candidates}
         self._merge_comparison_lexical_candidates(
@@ -195,7 +199,7 @@ class RagRetrievalEngine:
         candidate_limit = rerank_pool_limit(
             question=question,
             ordered_candidates=candidates,
-            top_k=self._top_k,
+            top_k=actual_top_k,
         )
         candidates = select_rerank_candidate_pool(
             ordered_candidates=candidates,
@@ -215,7 +219,7 @@ class RagRetrievalEngine:
         selected_chunks = select_final_chunks(
             ranked_candidates=ranked_candidates,
             coverage_groups=coverage_groups,
-            top_k=self._top_k,
+            top_k=actual_top_k,
         )
 
         return RetrievalResult(
@@ -232,7 +236,9 @@ class RagRetrievalEngine:
         query_embedding: list[float],
         *,
         user_id: str,
+        top_k: int | None = None,
     ) -> RetrievalResult:
+        actual_top_k = top_k if top_k is not None else self._top_k
         all_chunks = self._hybrid_candidates_for_collection(
             question,
             query_embedding,
@@ -256,7 +262,7 @@ class RagRetrievalEngine:
                 chunk.fused_score,
             ),
             reverse=True,
-        )[: self._top_k]
+        )[: actual_top_k]
 
         return RetrievalResult(
             chunks=[
@@ -716,7 +722,7 @@ class RagRetrievalEngine:
         return bonus
 
     def _where_filter(self, collection_id: str, *, user_id: str) -> dict[str, object]:
-        if collection_id == self._collection_name:
+        if collection_id in (self._collection_name, "all-pdfs"):
             return {"$and": [{"user_id": user_id}, {"is_indexed": 1}]}
         return {
             "$and": [

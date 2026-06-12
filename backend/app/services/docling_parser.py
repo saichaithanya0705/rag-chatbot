@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from pathlib import Path
 import threading
@@ -7,6 +8,8 @@ from typing import Any
 import unicodedata
 
 from app.services.document_parser import ParsedBlock, ParsedDocument, ParsedPage
+
+LOGGER = logging.getLogger(__name__)
 
 
 MARGIN_REPEAT_RATIO = 0.12
@@ -43,20 +46,97 @@ class DoclingDocumentParser:
         return self._artifacts_path
 
     def is_available(self) -> bool:
+        return self.ocr_pipeline_available() or self.fallback_parser_available()
+
+    def ocr_pipeline_available(self) -> bool:
         try:
             self._import_docling_converter_types()
         except ImportError:
             return False
         return True
 
+    def fallback_parser_available(self) -> bool:
+        try:
+            self._import_pdfium_module()
+        except ImportError:
+            return False
+        return True
+
     def parse(self, pdf_path: Path) -> ParsedDocument:
-        converter = self._ensure_converter()
-        result = converter.convert(pdf_path)
-        document = result.document
-        pages = self._pages_from_docling_document(document)
+        try:
+            pdfium = self._import_pdfium_module()
+            doc = pdfium.PdfDocument(pdf_path)
+            page_count = len(doc)
+            # Directly bypass docling layout parser for large PDFs (> 50 pages) to avoid OOM crashes
+            if page_count > 50:
+                LOGGER.info(
+                    "PDF page count (%d) exceeds threshold (50). Direct bypass to high-speed pypdfium2 parser to conserve memory.",
+                    page_count,
+                )
+                return self._parse_fallback_pdfium(pdf_path)
+        except Exception as e:
+            LOGGER.warning("Pre-flight page count check failed: %s. Proceeding with standard parser.", e)
+
+        try:
+            converter = self._ensure_converter()
+            result = converter.convert(pdf_path)
+            document = result.document
+            pages = self._pages_from_docling_document(document)
+            if not pages:
+                raise ValueError("Docling did not extract readable page content from the PDF.")
+            return ParsedDocument(parser_name=self.parser_name, pages=pages)
+        except Exception as error:
+            LOGGER.warning(
+                "Docling parser failed due to error: %s. Falling back to high-speed pypdfium2 parser.",
+                error,
+                exc_info=True,
+            )
+            return self._parse_fallback_pdfium(pdf_path)
+
+    def _parse_fallback_pdfium(self, pdf_path: Path) -> ParsedDocument:
+        pdfium = self._import_pdfium_module()
+        LOGGER.info("Starting lightweight pypdfium2 fallback parser for: %s", pdf_path)
+        doc = pdfium.PdfDocument(pdf_path)
+        pages: list[ParsedPage] = []
+        
+        for index in range(len(doc)):
+            page_number = index + 1
+            try:
+                page = doc[index]
+                width, height = page.get_size()
+                textpage = page.get_textpage()
+                text = textpage.get_text_bounded()
+                
+                blocks: list[ParsedBlock] = []
+                paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+                
+                if not paragraphs and text.strip():
+                    paragraphs = [text.strip()]
+                    
+                for block_index, paragraph in enumerate(paragraphs):
+                    blocks.append(
+                        ParsedBlock(
+                            text=paragraph,
+                            page_number=page_number,
+                            label="paragraph",
+                            top=0.0,
+                            bottom=height,
+                            page_height=height,
+                            bbox={"l": 0.0, "t": 0.0, "r": width, "b": height},
+                            source_ref=f"page_{page_number}_block_{block_index}",
+                            content_layer="text"
+                        )
+                    )
+                if blocks:
+                    pages.append(ParsedPage(page_number=page_number, blocks=blocks))
+            except Exception as e:
+                LOGGER.warning("Failed parsing page %d with pypdfium2: %s", page_number, e)
+                
         if not pages:
-            raise ValueError("Docling did not extract readable page content from the PDF.")
-        return ParsedDocument(parser_name=self.parser_name, pages=pages)
+            raise ValueError("Both Docling and pypdfium2 fallback failed to extract readable page content.")
+            
+        LOGGER.info("Successfully completed fallback pypdfium2 parsing. Total pages parsed: %d", len(pages))
+        return ParsedDocument(parser_name="pypdfium2_fallback", pages=pages)
 
     def _ensure_converter(self) -> Any:
         if self._converter is None:
@@ -97,6 +177,12 @@ class DoclingDocumentParser:
         from docling.document_converter import DocumentConverter, PdfFormatOption
 
         return InputFormat, PdfPipelineOptions, TableStructureOptions, DocumentConverter, PdfFormatOption
+
+    @staticmethod
+    def _import_pdfium_module() -> Any:
+        import pypdfium2 as pdfium
+
+        return pdfium
 
     def _prepare_artifacts(self, artifacts_path: Path) -> None:
         artifacts_path.mkdir(parents=True, exist_ok=True)
