@@ -287,7 +287,7 @@ Important context: the bundled Graphify scanner still reported whole-repo graph-
   - Result: whole-repo graph-only triage `26/100`; whole-repo graph-plus-source triage `86/100`; used as triage only for this scoped audit.
 - `git ls-files | rg "(^|/)(\.env|.*\.env|.*\.pdf|.*\.zip|test_image\.png|\.jules/)"`
   - Result: no tracked matching local artifacts.
-- `git grep -n -I "NVIDIA_API_KEY|RAG_NVIDIA_API_KEY|OPENAI_API_KEY|sk-[A-Za-z0-9]|BEGIN .*PRIVATE KEY|password\s*=|api_key\s*=|Authorization: Bearer" HEAD -- . ":!AI_SLOP_AUDIT.md"`
+- `git grep -n -I "<secret-patterns-redacted>" HEAD -- . ":!AI_SLOP_AUDIT.md"`
   - Result: found only env-var names/test placeholders, no committed secret values.
 
 Residual risk:
