@@ -212,12 +212,10 @@ class IngestionDispatcher:
 
     def _worker_main(self) -> None:
         loop: asyncio.AbstractEventLoop | None = None
+        container: ServiceContainer | None = None
         try:
-            from app.services.container import build_container
-
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            container = build_container(self._settings)
         except Exception as error:
             self._startup_error = error
             self._thread_ready.set()
@@ -232,6 +230,10 @@ class IngestionDispatcher:
                     self._queue.task_done()
                     break
                 try:
+                    if container is None:
+                        from app.services.container import build_container
+
+                        container = build_container(self._settings)
                     if isinstance(job, IngestionJob):
                         loop.run_until_complete(
                             container.ingestion_service.ingest_pdf(
@@ -304,7 +306,7 @@ class IngestionDispatcher:
                     self._queue.task_done()
         finally:
             try:
-                if loop is not None:
+                if loop is not None and container is not None:
                     loop.run_until_complete(container.aclose())
             except Exception:
                 logger.exception("Failed to close local ingestion runner services cleanly.")
