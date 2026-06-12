@@ -246,3 +246,49 @@ Validation refreshed in this pass:
   - Result: whole-repo graph-only triage `26/100`; whole-repo graph-plus-source triage `86/100`; used as triage only for this scoped audit.
 - Scoped source inspection:
   - Result: no new over-indirection, fake integration, weakened test, unsafe sink, or missing validation was found in the newly added rate-limit/web-search code.
+
+---
+
+## Post-Commit Hygiene Audit Pass - 2026-06-12
+
+**Verdict**
+Score: 18/100, Minimal slop risk after repair
+Confidence: Medium
+
+Scope: repository changes made during the commit/push prompt plus directly connected commit-hygiene architecture: `.gitignore`, ignored local artifacts, and helper scripts staged in commit `4041a0d`.
+
+Graphify freshness: `graphify-out/GRAPH_REPORT.md` dated 2026-05-17.
+
+Important context: the bundled Graphify scanner still reported whole-repo graph-only triage `26/100` and graph-plus-source triage `86/100`. This section scores only the prompt-touched commit-hygiene path after source inspection and repair.
+
+**Why**
+- The `.gitignore` change is a healthy guardrail: it prevents `backend/.env`, PDFs, ZIPs, `.jules/`, and local test images from being accidentally committed.
+- Source inspection found no tracked `.env`, PDF, ZIP, `.jules/`, or local image artifact after the commit.
+- Three local smoke scripts were committed with hardcoded `d:/projects/chat/test_image.png` paths, broad catch-and-print behavior, and one undeclared `requests` import.
+- Those scripts were unreferenced and duplicated coverage already present in backend tests, so deletion was the permanent repair.
+
+**Evidence**
+| Signal | Graph Evidence | Source Evidence | Classification | Likely Root Cause | Permanent Fix | Prevention Gate |
+|---|---|---|---|---|---|---|
+| Secret/local artifact guard added before push | Community 5 contains runtime config and deployment settings; commit hygiene protects that central config path from leaking local state | `.gitignore` excludes `.env`, `.env.*`, `backend/.env`, `.jules/`, `*.pdf`, `*.zip`, and `test_image.png` | Healthy architecture signal | The repo lacked ignore rules for local deployment/demo artifacts | Added durable ignore rules before staging and verified no matching tracked files | Run `git check-ignore` and tracked-file checks before committing deployment work |
+| Local smoke scripts committed as source | Not a Graphify core node, but scripts live under the backend operational script boundary connected to developer workflows | Removed `backend/scripts/test_image_input.py`, `backend/scripts/test_ocr_direct.py`, and `backend/scripts/test_pydantic_images.py`; before removal they contained `d:/projects/chat/test_image.png`, broad `except Exception`, and `requests` not present in `backend/requirements.txt` | Confirmed slop signal, fixed | Local experiment files were staged with production hardening work | Deleted the unreferenced scripts instead of carrying local-machine assumptions in source | Keep throwaway local probes ignored or convert them into documented CLI utilities with argparse, declared dependencies, and tests |
+
+**Healthy Signals**
+- The branch was pushed cleanly to GitHub before this audit, and the worktree was clean at the start of this pass.
+- `git ls-files` found no tracked env/PDF/ZIP/local image artifacts.
+- The remaining useful image/schema behavior has proper test coverage in `backend/tests/test_chat_request_schema.py` and chat-path tests.
+
+**Permanent Fixes**
+- Removed the three unreferenced local smoke scripts from `backend/scripts/`.
+- Kept the `.gitignore` guardrails that prevent the same class of local artifact from re-entering source control.
+
+**Validation**
+- `D:\projects\chat\backend\.venv\Scripts\python.exe C:\Users\SAI\.codex\skills\audit-ai-slop\scripts\graphify_slop_scan.py --graphify-out graphify-out --source-root . --format markdown`
+  - Result: whole-repo graph-only triage `26/100`; whole-repo graph-plus-source triage `86/100`; used as triage only for this scoped audit.
+- `git ls-files | rg "(^|/)(\.env|.*\.env|.*\.pdf|.*\.zip|test_image\.png|\.jules/)"`
+  - Result: no tracked matching local artifacts.
+- `git grep -n -I "NVIDIA_API_KEY|RAG_NVIDIA_API_KEY|OPENAI_API_KEY|sk-[A-Za-z0-9]|BEGIN .*PRIVATE KEY|password\s*=|api_key\s*=|Authorization: Bearer" HEAD -- . ":!AI_SLOP_AUDIT.md"`
+  - Result: found only env-var names/test placeholders, no committed secret values.
+
+Residual risk:
+- None for this scoped cleanup after the follow-up commit and push; before that GitHub still contains the previous local smoke scripts.
