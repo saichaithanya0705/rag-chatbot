@@ -9,15 +9,17 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.core.config import load_settings
-from app.services.ollama_client import OllamaClient
+from app.services.nvidia_client import NvidiaClient
 
 
 async def main() -> None:
     settings = load_settings()
-    client = OllamaClient(
-        base_url=settings.ollama_base_url,
+    client = NvidiaClient(
+        base_url=settings.nvidia_base_url,
         embed_model=settings.embed_model,
         chat_model=settings.chat_model,
+        nvidia_base_url=settings.nvidia_base_url,
+        nvidia_api_key=settings.nvidia_api_key,
         expected_embedding_dimensions=settings.embedding_dimensions,
     )
 
@@ -28,7 +30,8 @@ async def main() -> None:
     )
 
     print(f"Embedding vector length: {len(embeddings[0])}")
-    print(f"Generation result: {answer}")
+    print(f"Generation result: {answer.response}")
+    await client.aclose()
 
 
 if __name__ == "__main__":

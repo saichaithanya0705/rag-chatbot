@@ -6,6 +6,8 @@ from dataclasses import dataclass
 import httpx
 from lxml import html
 
+SNIPPET_FALLBACK_CONTENT_LIMIT = 1600
+
 
 class WebSearchError(RuntimeError):
     """Base error for web-search failures."""
@@ -159,14 +161,33 @@ class WebSearchService:
             return_exceptions=True,
         )
 
-        hydrated_results = [
-            result
-            for result in fetched_pages
-            if isinstance(result, WebSearchResult)
-        ]
+        hydrated_results: list[WebSearchResult] = []
+        for fallback_result, fetched_result in zip(candidate_results, fetched_pages, strict=False):
+            if isinstance(fetched_result, WebSearchResult):
+                hydrated_results.append(fetched_result)
+                continue
+
+            snippet_result = self._snippet_fallback_result(fallback_result)
+            if snippet_result is not None:
+                hydrated_results.append(snippet_result)
+
         if not hydrated_results:
             raise WebSearchError("Web search results could not be read.")
         return hydrated_results
+
+    @staticmethod
+    def _snippet_fallback_result(result: WebSearchResult) -> WebSearchResult | None:
+        snippet = " ".join(result.snippet.split())
+        if not snippet:
+            return None
+
+        return WebSearchResult(
+            title=result.title,
+            url=result.url,
+            snippet=result.snippet,
+            content=snippet[:SNIPPET_FALLBACK_CONTENT_LIMIT],
+            published_at=result.published_at,
+        )
 
     async def _fetch_result_page(self, result: WebSearchResult) -> WebSearchResult | None:
         try:

@@ -9,6 +9,7 @@ import httpx
 
 from app.core.chroma_store import ChromaStore
 from app.models.schemas import CitationPayload, ToolCallPayload, ChatImage
+from app.services.document_inventory import build_document_inventory_answer
 from app.services.document_service import DocumentService
 from app.services.kg_manager import KgManager
 from app.services.message_intent import classify_message_intent
@@ -81,6 +82,7 @@ class RagService:
         web_search_score_threshold: float,
     ) -> None:
         self._nvidia_client = nvidia_client
+        self._document_service = document_service
         self._query_rewrite_service = query_rewrite_service
         self._web_search_service = web_search_service
         self._retrieval_engine = RagRetrievalEngine(
@@ -351,6 +353,7 @@ class RagService:
         message_intent = await classify_message_intent(
             question,
             nvidia_client=self._nvidia_client,
+            history_messages=history_messages or [],
             include_thinking=thinking_enabled,
         )
         intent_reasoning_segments = self._reasoning_segments_from(
@@ -366,6 +369,22 @@ class RagService:
                 shortcut_answer=message_intent.reply,
                 cross_session_turn_count=cross_session_turn_count,
                 response_mode="conversation",
+                trace_detail=message_intent.trace_detail,
+                reasoning_segments=intent_reasoning_segments,
+                images=images or [],
+            )
+
+        if message_intent.kind == "document_inventory":
+            return PreparedAnswer(
+                question=question,
+                prompt="",
+                system_prompt="You answer plainly.",
+                contexts=[],
+                shortcut_answer=build_document_inventory_answer(
+                    self._document_service.list_documents(user_id=user_id)
+                ),
+                cross_session_turn_count=cross_session_turn_count,
+                response_mode="document_inventory",
                 trace_detail=message_intent.trace_detail,
                 reasoning_segments=intent_reasoning_segments,
                 images=images or [],

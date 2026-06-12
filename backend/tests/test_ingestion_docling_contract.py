@@ -77,7 +77,7 @@ class _FakeKeywordService:
     pass
 
 
-class _FakeOllamaClient:
+class _FakeNvidiaClient:
     async def embed_texts(self, texts: list[str]) -> list[list[float]]:
         return [[0.1, 0.2, 0.3] for _text in texts]
 
@@ -116,7 +116,7 @@ class IngestionDoclingContractTests(unittest.IsolatedAsyncioTestCase):
         ingestion = IngestionService(
             document_service=document_service,  # type: ignore[arg-type]
             keyword_service=_FakeKeywordService(),  # type: ignore[arg-type]
-            ollama_client=_FakeOllamaClient(),  # type: ignore[arg-type]
+            nvidia_client=_FakeNvidiaClient(),  # type: ignore[arg-type]
             text_splitter=_FakeSplitter(),  # type: ignore[arg-type]
             chroma_store=chroma_store,  # type: ignore[arg-type]
             topic_index_service=_FakeTopicIndexService(),  # type: ignore[arg-type]

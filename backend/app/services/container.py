@@ -6,6 +6,7 @@ from app.core.chroma_store import ChromaStore
 from app.core.config import Settings
 from app.core.database import Database
 from app.services.docling_parser import DoclingDocumentParser
+from app.services.chat_rate_limiter import ChatRateLimiter
 from app.services.document_preview_service import DocumentPreviewService
 from app.services.document_service import DocumentService
 from app.services.embedding_index_service import EmbeddingIndexService
@@ -42,6 +43,7 @@ class ServiceContainer:
     web_search_service: WebSearchService
     ingestion_service: IngestionService
     rag_service: RagService
+    chat_rate_limiter: ChatRateLimiter
 
     async def aclose(self) -> None:
         await self.keyword_service.aclose()
@@ -100,6 +102,10 @@ def build_container(settings: Settings) -> ServiceContainer:
         region=settings.web_search_region,
         max_results=settings.web_search_max_results,
     )
+    chat_rate_limiter = ChatRateLimiter(
+        per_minute=settings.chat_rate_limit_per_minute,
+        per_hour=settings.chat_rate_limit_per_hour,
+    )
     query_rewrite_service = QueryRewriteService(nvidia_client=nvidia_client)
     keyword_service = KeywordService(
         base_url=settings.nvidia_base_url,
@@ -149,4 +155,5 @@ def build_container(settings: Settings) -> ServiceContainer:
         web_search_service=web_search_service,
         ingestion_service=ingestion_service,
         rag_service=rag_service,
+        chat_rate_limiter=chat_rate_limiter,
     )

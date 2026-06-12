@@ -38,6 +38,27 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.data_dir, Path(data_dir))
         self.assertEqual(settings.docling_artifacts_dir, Path(artifacts_dir))
 
+    def test_chat_rate_limits_default_to_strict_demo_values(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            settings = load_settings()
+
+        self.assertEqual(settings.chat_rate_limit_per_minute, 3)
+        self.assertEqual(settings.chat_rate_limit_per_hour, 12)
+
+    def test_chat_rate_limits_can_be_overridden_for_deployments(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "RAG_CHAT_RATE_LIMIT_PER_MINUTE": "2",
+                "RAG_CHAT_RATE_LIMIT_PER_HOUR": "8",
+            },
+            clear=False,
+        ):
+            settings = load_settings()
+
+        self.assertEqual(settings.chat_rate_limit_per_minute, 2)
+        self.assertEqual(settings.chat_rate_limit_per_hour, 8)
+
 
 if __name__ == "__main__":
     unittest.main()

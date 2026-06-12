@@ -1,4 +1,7 @@
 .claude/settings.local.json
+.env
+.env.*
+.jules/
 .idea/
 .playwright-cli/
 .venv/
@@ -14,6 +17,7 @@ frontend/.vite/
 frontend/vite.config.d.ts
 frontend/vite.config.js
 backend/.venv/
+backend/.env
 backend/data/chroma/
 backend/data/*.db
 backend/data/*.sqlite3
@@ -28,6 +32,9 @@ graphify-out/
 output/
 tmp/
 *.log
+*.pdf
+*.zip
+test_image.png
 
 # MemPalace per-project files (issue #185)
 mempalace.yaml

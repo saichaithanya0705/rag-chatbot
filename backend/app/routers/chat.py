@@ -5,7 +5,7 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
 from app.dependencies import get_container, get_user_id
@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 KEEPALIVE_INTERVAL_SECONDS = 8.0
+CHAT_RATE_LIMIT_DETAIL = "This portfolio demo has a strict chat limit. Please wait before sending another message."
 logger = logging.getLogger(__name__)
 
 # Per-session streaming lock: prevents two concurrent streams for the same session
@@ -50,14 +51,57 @@ def _topic_exists(
     return any(topic.id == collection_id for topic in container.topic_index_service.list_topics(user_id=user_id))
 
 
+def _client_rate_limit_id(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    if forwarded_for:
+        first_forwarded_hop = forwarded_for.split(",", maxsplit=1)[0].strip()
+        if first_forwarded_hop:
+            return first_forwarded_hop
+
+    for header_name in ("cf-connecting-ip", "x-real-ip"):
+        header_value = request.headers.get(header_name, "").strip()
+        if header_value:
+            return header_value
+
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _enforce_chat_rate_limit(
+    *,
+    container: ServiceContainer,
+    request: Request,
+    user_id: str,
+) -> None:
+    decision = container.chat_rate_limiter.check_and_record(
+        user_id=user_id,
+        client_id=_client_rate_limit_id(request),
+    )
+    if decision.allowed:
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail=CHAT_RATE_LIMIT_DETAIL,
+        headers={"Retry-After": str(decision.retry_after_seconds)},
+    )
+
+
 @router.post("/query", response_model=ChatResponse)
 async def query_chat(
     request: ChatRequest,
+    http_request: Request,
     container: ServiceContainer = Depends(get_container),
     user_id: str = Depends(get_user_id),
 ) -> ChatResponse:
     thinking_enabled = bool(request.thinking_enabled)
     try:
+        _enforce_chat_rate_limit(
+            container=container,
+            request=http_request,
+            user_id=user_id,
+        )
         if not _topic_exists(container, collection_id=request.collection_id, user_id=user_id):
             raise HTTPException(
                 status_code=409,
@@ -190,6 +234,11 @@ async def stream_chat(
     user_id: str = Depends(get_user_id),
 ) -> StreamingResponse:
     thinking_enabled = bool(request.thinking_enabled)
+    _enforce_chat_rate_limit(
+        container=container,
+        request=http_request,
+        user_id=user_id,
+    )
     if not _topic_exists(container, collection_id=request.collection_id, user_id=user_id):
         raise HTTPException(
             status_code=409,

@@ -80,6 +80,9 @@ Important context: the bundled Graphify triage scanner reported `86/100` severe 
 - Treat “code imports it” as “manifest must declare it”; review dependency manifests in the same diff as runtime changes.
 
 **Validation**
+- Stop-hook audit pass for the deployment/readiness/parser/bootstrap edits:
+  - Re-read `C:/Users/SAI/.codex/skills/audit-ai-slop/SKILL.md`, re-read `graphify-out/GRAPH_REPORT.md`, and re-ran the bundled Graphify slop triage scanner.
+  - Result: no new confirmed slop defect was found in the prompt-touched liveness/readiness/parser/bootstrap path; previous root-cause fixes remain the canonical repair.
 - `python C:/Users/SAI/.codex/skills/audit-ai-slop/scripts/graphify_slop_scan.py --graphify-out graphify-out --source-root . --format markdown`
   - Result: whole-repo triage `86/100` severe risk; used as triage only, not as the final verdict for this narrower scope.
 - `D:\projects\chat\backend\.venv\Scripts\python.exe -m pytest tests\test_docling_parser.py tests\test_ingestion_docling_contract.py tests\test_config.py`
@@ -112,3 +115,134 @@ Important context: the bundled Graphify triage scanner reported `86/100` severe 
 
 Residual risk:
 - Render free-tier instances can still sleep after inactivity, so the first request after a long idle period may be slower, but the frontend now waits for readiness instead of showing a permanent workspace-load failure.
+
+---
+
+## Chat Intent And Document Inventory Audit Pass - 2026-06-12
+
+**Verdict**
+Score: 24/100, Low slop risk after repair
+Confidence: Medium
+
+Scope: chat intent and document-inventory edits made in this prompt plus directly connected routing/trace tests: `backend/app/services/message_intent.py`, `backend/app/services/rag_service.py`, `backend/app/services/answer_trace.py`, `backend/app/services/document_inventory.py`, and `backend/tests/test_chat_intent_and_reasoning.py`.
+
+Graphify freshness: `graphify-out/GRAPH_REPORT.md` dated 2026-05-17.
+
+Important context: the bundled Graphify triage scanner again reported `86/100` severe graph-plus-source risk for the whole repository. This scoped pass treats that as triage only and scores the prompt-touched chat-routing path after source inspection and repair.
+
+**Why**
+- Graphify identifies `RagService` as god node #5 with 36 edges and a cross-community bridge. Adding workspace inventory formatting directly to it would increase mixed responsibility in an already central coordinator.
+- The initial chat-routing repair correctly introduced `document_inventory`, but source inspection showed response construction also belonged to a separate deterministic inventory boundary.
+- The rule-first classifier had one over-broad app-help regex that could classify domain questions like "how do I use insulin from this PDF?" as conversation instead of knowledge.
+- The repaired path now separates intent classification, RAG coordination, document-inventory presentation, and trace reporting.
+
+**Evidence**
+| Signal | Graph Evidence | Source Evidence | Classification | Likely Root Cause | Permanent Fix | Prevention Gate |
+|---|---|---|---|---|---|---|
+| Workspace inventory presentation added to an existing RAG god node | Graphify lists `RagService` as god node #5 and a bridge across RAG, retrieval, parser, web, and intent communities | Before repair, inventory formatting lived in `backend/app/services/rag_service.py`; after repair `RagService` only routes at `backend/app/services/rag_service.py:376` and delegates answer construction at `backend/app/services/rag_service.py:382` | Confirmed slop signal, fixed | Solution-first bug fix put deterministic app-state presentation into the fastest visible coordinator | Added `backend/app/services/document_inventory.py:9` with focused inventory answer construction and kept `RagService` as the routing coordinator | When adding new response modes, keep formatting/business presentation out of `RagService` unless it is RAG-specific |
+| App-help regex was broad enough to swallow real domain questions | Community 17 is the intent-classification cluster; incorrect shortcuts here bypass RAG and affect all chat routes | App-help patterns now require app/document context in `backend/app/services/message_intent.py`; regression test at `backend/tests/test_chat_intent_and_reasoning.py:152` proves a domain "how do I use..." question stays on the knowledge path | Confirmed slop signal, fixed | Rule-first classifier was added without a negative boundary test for plausible overlapping language | Narrowed app-help rules and added the negative regression test | For every deterministic shortcut, add at least one near-miss test that must not shortcut |
+| New document-inventory response mode needed trace separation | `build_answer_trace()` sits in Community 11 with history serialization; misleading trace output creates review/debugging ambiguity | `backend/app/services/answer_trace.py:35` returns an `inventory` trace instead of claiming scoped PDF retrieval | Healthy architecture signal | A new response mode was added, so trace semantics needed a matching branch | Added an explicit `document_inventory` trace branch and regression test at `backend/tests/test_chat_intent_and_reasoning.py:242` | New response modes must add trace assertions that prove they do not claim unrelated retrieval/citation behavior |
+
+**Aggressive Review Targets**
+- The prompt-based classifier still depends on model JSON for non-rule cases. It parses defensively and falls back to knowledge, but broader intent taxonomy should eventually be evaluated with more near-miss examples.
+- Session memory lookup still happens before `RagService.prepare_answer()` in the streaming/query routes, so purely conversational turns may still pay memory-embedding cost before shortcutting. This is performance debt, not a confirmed correctness bug in this scoped pass.
+
+**Healthy Signals**
+- `document_inventory` answers now bypass web search, embeddings, retrieval, and LLM generation for deterministic workspace-state questions.
+- Tests verify both positive inventory routing and negative domain-question routing.
+- The change added no dependency, shell execution, unsafe deserialization, or external integration.
+
+**Permanent Fixes**
+- Extracted document-inventory answer construction to `backend/app/services/document_inventory.py`.
+- Kept `RagService` responsible for orchestration only: classify, call document service, delegate response construction, and return `PreparedAnswer`.
+- Narrowed app-help regexes so only app/workspace/document usage questions shortcut conversation.
+- Added regression coverage for assistant meta-chat, document inventory, domain "how do I use..." near-miss behavior, and document-inventory trace semantics.
+
+**Validation**
+- `D:\projects\chat\backend\.venv\Scripts\python.exe C:\Users\SAI\.codex\skills\audit-ai-slop\scripts\graphify_slop_scan.py --graphify-out graphify-out --source-root . --format markdown`
+  - Result: whole-repo graph-only triage `26/100` low, whole-repo graph-plus-source triage `86/100` severe; used as triage only for this scoped source inspection.
+- `D:\projects\chat\backend\.venv\Scripts\python.exe -m pytest tests\test_chat_intent_and_reasoning.py tests\test_rag_grounding.py` in `backend/`
+  - Result: `16 passed`.
+- `D:\projects\chat\backend\.venv\Scripts\python.exe -m py_compile app\services\message_intent.py app\services\rag_service.py app\services\answer_trace.py app\services\document_inventory.py` in `backend/`
+  - Result: passed.
+- `git diff --check -- backend\app\services\message_intent.py backend\app\services\rag_service.py backend\app\services\answer_trace.py backend\app\services\document_inventory.py backend\tests\test_chat_intent_and_reasoning.py`
+  - Result: no whitespace errors; Git emitted existing LF-to-CRLF warnings only.
+
+Residual risk:
+- Live Render/Netlify deployments were not updated in this audit pass. The code path is fixed locally and needs redeploy for the portfolio site.
+
+---
+
+## Chat Rate Limit And Web Search Audit Pass - 2026-06-12
+
+**Verdict**
+Score: 22/100, Low slop risk after repair
+Confidence: Medium
+
+Scope: chat abuse-control and web-search reliability edits made in this prompt plus directly connected architecture: `backend/app/services/chat_rate_limiter.py`, `backend/app/services/web_search_service.py`, `backend/app/routers/chat.py`, `backend/app/core/config.py`, `backend/app/services/container.py`, `backend/tests/test_chat_rate_limiter.py`, `backend/tests/test_web_search_service.py`, `backend/tests/test_config.py`, and the web-search regression in `backend/tests/test_chat_intent_and_reasoning.py`.
+
+Graphify freshness: `graphify-out/GRAPH_REPORT.md` dated 2026-05-17.
+
+Important context: the bundled Graphify triage scanner again reported whole-repo graph-only triage `26/100` and graph-plus-source triage `86/100`. This section scores only the prompt-touched chat-rate-limit and web-search path after source inspection and repair.
+
+**Why**
+- Graphify identifies `RagService`, `ServiceContainer`, and `query_chat()`/`stream_chat()` as central chat-path nodes, so abuse controls and web-search failure handling belong at stable boundaries instead of frontend-only UI state.
+- The chat endpoints had no per-user/per-client request budget before history, retrieval, web search, or model calls.
+- Live provider smoke testing confirmed DuckDuckGo returned usable raw results, but `WebSearchService._hydrate_results()` discarded all results when target page fetches failed.
+- The repaired path adds strict backend rate limiting, preserves clear container boundaries, and treats provider snippets as valid fallback web evidence when full-page hydration fails.
+
+**Evidence**
+| Signal | Graph Evidence | Source Evidence | Classification | Likely Root Cause | Permanent Fix | Prevention Gate |
+|---|---|---|---|---|---|---|
+| Public chat endpoints could trigger expensive work without an abuse budget | `query_chat()` and `stream_chat()` are in Community 21; `ServiceContainer` is god node #10 with 24 edges | Limiter now gates chat before topic/history/retrieval at `backend/app/routers/chat.py:100` and `backend/app/routers/chat.py:237`; policy lives in `backend/app/services/chat_rate_limiter.py:20` | Confirmed slop signal, fixed | Demo deployment focused on functionality before adding resource-governance controls | Added strict sliding-window limits per user and per client IP, returning `429` plus `Retry-After` | Any public AI endpoint must have backend-side resource limits before invoking retrieval, search, or model calls |
+| Web search failed when full target-page hydration was unavailable | Community 18 is the web-search integration cluster; `RagService` is god node #5 and depends on this evidence path | `backend/app/services/web_search_service.py:157` now keeps search-result snippets via `backend/app/services/web_search_service.py:179`; live smoke test returned 3 results after repair | Confirmed slop signal, fixed | Search integration treated page hydration as mandatory even though provider snippets were already usable evidence | Added snippet fallback results while preserving full-page content when available | Web integrations must degrade to provider metadata/snippets instead of collapsing to unavailable when secondary enrichment fails |
+| Rate-limit configuration needed deployment tuning without code edits | Community 5 contains `Settings` and `load_settings()` as central config infrastructure | Defaults and env overrides are in `backend/app/core/config.py:45`, `backend/app/core/config.py:159`, and tested at `backend/tests/test_config.py:41` | Healthy architecture signal | Strict demo limits need operational tuning across local/deployed environments | Added `RAG_CHAT_RATE_LIMIT_PER_MINUTE` and `RAG_CHAT_RATE_LIMIT_PER_HOUR` with strict defaults of `3` and `12` | Keep operational limits configurable, but safe by default |
+| Web-search toggle needed backend-path regression coverage | `RagService` bridges retrieval, web, and intent communities | `backend/tests/test_chat_intent_and_reasoning.py:329` proves web search is called when PDF context is empty and the toggle is enabled | Healthy verification signal | UI toggle behavior can regress silently if only provider tests exist | Added a RAG-level regression that checks the web-search call, tool call, and web evidence context | Tests for toggles should verify backend effects, not only frontend state |
+
+**Aggressive Review Targets**
+- The in-memory limiter is correct for the current single-instance Render demo, but a multi-instance deployment would need Redis/Upstash or edge rate limiting to share counters.
+- The whole-repo scanner still flags broad error masking in `backend/app/routers/chat.py` and `backend/app/services/rag_service.py`; those are outside this scoped pass except where the new limiter/web-search code touches them.
+
+**Healthy Signals**
+- No new dependencies, shell execution, unsafe deserialization, or hidden dashboard-only configuration were added.
+- The rate limiter has deterministic tests for per-minute, per-hour, per-user, per-client, expiry, forwarded IP extraction, and `429` response behavior.
+- The web-search fix was verified with unit tests and a live provider smoke test.
+
+**Permanent Fixes**
+- Added `ChatRateLimiter` as a focused service instead of spreading counters through route handlers or frontend state.
+- Wired the limiter into both `/api/chat/query` and `/api/chat/stream` before expensive chat work.
+- Added strict default limits: 3 messages/minute and 12 messages/hour, with deployment env overrides.
+- Repaired `WebSearchService` so failed full-page hydration falls back to provider snippets rather than discarding usable search results.
+- Added regression tests for limiter behavior, config defaults/overrides, snippet fallback, and RAG web-search usage.
+
+**Anti-Slop Gates**
+- Any public model-backed route should have a backend resource budget and a test that proves exhaustion returns a typed response.
+- Any external enrichment step should preserve lower-fidelity but valid upstream evidence when optional hydration fails.
+- Keep frontend toggles paired with backend-path tests so UI state cannot imply behavior the backend does not execute.
+
+**Validation**
+- `D:\projects\chat\backend\.venv\Scripts\python.exe C:\Users\SAI\.codex\skills\audit-ai-slop\scripts\graphify_slop_scan.py --graphify-out graphify-out --source-root . --format markdown`
+  - Result: whole-repo graph-only triage `26/100`; whole-repo graph-plus-source triage `86/100`; used as triage only for this scoped audit.
+- `D:\projects\chat\backend\.venv\Scripts\python.exe -m pytest tests\test_chat_rate_limiter.py tests\test_web_search_service.py tests\test_config.py tests\test_chat_intent_and_reasoning.py tests\test_rag_grounding.py tests\test_rag_retrieval.py`
+  - Result: `35 passed`.
+- `D:\projects\chat\backend\.venv\Scripts\python.exe -m py_compile app\services\chat_rate_limiter.py app\services\web_search_service.py app\routers\chat.py app\services\container.py app\core\config.py app\services\rag_service.py`
+  - Result: passed.
+- `git diff --check -- backend\app\services\chat_rate_limiter.py backend\app\services\web_search_service.py backend\app\routers\chat.py backend\app\services\container.py backend\app\core\config.py backend\tests\test_chat_rate_limiter.py backend\tests\test_web_search_service.py backend\tests\test_config.py backend\tests\test_chat_intent_and_reasoning.py`
+  - Result: no whitespace errors; Git emitted existing LF-to-CRLF warnings only.
+- Live local smoke test using `WebSearchService.search("OpenAI latest news")`
+  - Result: returned 3 web results after snippet fallback repair.
+
+Residual risk:
+- These fixes are local only until the backend is redeployed to Render. The currently hosted portfolio site will not enforce the new limits or use the repaired web-search fallback until deployment completes.
+
+### Stop-Hook Re-Audit Confirmation - 2026-06-12
+
+Scope: same prompt-touched chat rate-limit and web-search path as above, plus directly connected route/config/container/test code.
+
+Result: no additional confirmed slop-like defect was found after re-reading the audit skill, Graphify report, scanner output, and scoped source files. The prior fixes remain the root-cause repair: backend-side chat budgeting before expensive AI work, snippet fallback for web-search hydration failures, strict config defaults, and behavior-level tests.
+
+Validation refreshed in this pass:
+- `D:\projects\chat\backend\.venv\Scripts\python.exe C:\Users\SAI\.codex\skills\audit-ai-slop\scripts\graphify_slop_scan.py --graphify-out graphify-out --source-root . --format markdown`
+  - Result: whole-repo graph-only triage `26/100`; whole-repo graph-plus-source triage `86/100`; used as triage only for this scoped audit.
+- Scoped source inspection:
+  - Result: no new over-indirection, fake integration, weakened test, unsafe sink, or missing validation was found in the newly added rate-limit/web-search code.

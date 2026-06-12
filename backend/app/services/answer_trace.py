@@ -32,6 +32,16 @@ def build_answer_trace(
             )
         ]
 
+    if response_mode == "document_inventory":
+        return [
+            AnswerTraceStepPayload(
+                kind="inventory",
+                label="Document inventory",
+                detail=conversation_detail
+                or "Answered from the workspace document inventory, so retrieval and web search were skipped.",
+            )
+        ]
+
     trace_steps.append(
         AnswerTraceStepPayload(
             kind="scope",

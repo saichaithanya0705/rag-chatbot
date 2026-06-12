@@ -42,6 +42,8 @@ class Settings:
     web_search_region: str
     web_search_max_results: int
     web_search_score_threshold: float
+    chat_rate_limit_per_minute: int
+    chat_rate_limit_per_hour: int
     allowed_origins: list[str]
     allowed_origin_regex: str
     topic_collection_prefix: str
@@ -154,6 +156,8 @@ def load_settings() -> Settings:
         web_search_region=os.getenv("RAG_WEB_SEARCH_REGION", "us-en"),
         web_search_max_results=int(os.getenv("RAG_WEB_SEARCH_MAX_RESULTS", "4")),
         web_search_score_threshold=float(os.getenv("RAG_WEB_SEARCH_SCORE_THRESHOLD", "0.3")),
+        chat_rate_limit_per_minute=_env_int("RAG_CHAT_RATE_LIMIT_PER_MINUTE", "3"),
+        chat_rate_limit_per_hour=_env_int("RAG_CHAT_RATE_LIMIT_PER_HOUR", "12"),
         allowed_origins=_resolve_allowed_origins(os.getenv("RAG_ALLOWED_ORIGINS")),
         allowed_origin_regex=_resolve_allowed_origin_regex(os.getenv("RAG_ALLOWED_ORIGIN_REGEX")),
         topic_collection_prefix=os.getenv("RAG_TOPIC_COLLECTION_PREFIX", "topic__"),
