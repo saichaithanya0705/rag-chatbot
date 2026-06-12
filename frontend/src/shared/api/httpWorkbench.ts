@@ -14,9 +14,12 @@ import type {
   StreamMessageResult,
 } from "@/shared/api/types";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL ?? "http://localhost:8000";
 const ROOT_COLLECTION: CollectionSummary = { id: "all-pdfs", label: "All PDFs" };
 const USER_ID_STORAGE_KEY = "local-rag-chat/user-id";
+const BACKEND_STARTING_DETAIL = "The service is still starting up. Try again shortly.";
+const BOOTSTRAP_RETRY_DELAY_MS = 1_000;
+const BOOTSTRAP_TIMEOUT_MS = 90_000;
 
 interface IndexedDocumentApiResponse {
   id: string;
@@ -81,6 +84,11 @@ interface SessionSummaryApiResponse {
   group: SessionSummary["group"];
   collectionId: string;
   updatedAt: string;
+}
+
+interface HealthApiResponse {
+  status: string;
+  thinkingSupported: boolean;
 }
 
 interface SessionMessageApiResponse {
@@ -257,6 +265,18 @@ interface AnswerTraceApiResponse {
   detail: string;
 }
 
+class ApiRequestError extends Error {
+  readonly detail?: string;
+  readonly statusCode?: number;
+
+  constructor(message: string, options?: { detail?: string; statusCode?: number }) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.detail = options?.detail;
+    this.statusCode = options?.statusCode;
+  }
+}
+
 function resolveErrorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message;
@@ -294,14 +314,40 @@ function buildHeaders(headers?: HeadersInit) {
   return nextHeaders;
 }
 
+async function buildApiRequestError(response: Response): Promise<ApiRequestError> {
+  const payload = await response.json().catch(() => null);
+  const detail = typeof payload?.detail === "string" ? payload.detail : undefined;
+  return new ApiRequestError(detail ?? `Request failed with status ${response.status}.`, {
+    detail,
+    statusCode: response.status,
+  });
+}
+
+function isTransientBootstrapError(error: unknown): error is ApiRequestError {
+  if (!(error instanceof ApiRequestError)) {
+    return false;
+  }
+
+  if (error.detail === BACKEND_STARTING_DETAIL) {
+    return true;
+  }
+
+  return error.statusCode !== undefined && [502, 503, 504].includes(error.statusCode);
+}
+
+async function waitForNextBootstrapAttempt() {
+  await new Promise((resolve) => {
+    setTimeout(resolve, BOOTSTRAP_RETRY_DELAY_MS);
+  });
+}
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: buildHeaders(init?.headers),
   });
   if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    throw new Error(payload?.detail ?? `Request failed with status ${response.status}.`);
+    throw await buildApiRequestError(response);
   }
 
   return (await response.json()) as T;
@@ -313,8 +359,7 @@ async function requestNoContent(path: string, init?: RequestInit): Promise<void>
     headers: buildHeaders(init?.headers),
   });
   if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    throw new Error(payload?.detail ?? `Request failed with status ${response.status}.`);
+    throw await buildApiRequestError(response);
   }
 }
 
@@ -481,46 +526,76 @@ export const httpWorkbenchGateway = {
   },
 
   async bootstrap(): Promise<BootstrapPayload> {
-    const [knowledgeBase, existingSessions, health] = await Promise.all([
-      this.loadKnowledgeBase(),
-      requestJson<SessionSummaryApiResponse[]>("/api/sessions"),
-      requestJson<{ thinkingSupported: boolean }>("/api/system/health"),
-    ]);
+    const deadline = Date.now() + BOOTSTRAP_TIMEOUT_MS;
+    let lastTransientError: ApiRequestError | null = null;
 
-    let activeSessionDetail: SessionDetailRecord;
-    let sessions = existingSessions;
+    while (Date.now() <= deadline) {
+      try {
+        const health = await requestJson<HealthApiResponse>("/api/system/health");
+        if (health.status !== "ok") {
+          lastTransientError = new ApiRequestError(BACKEND_STARTING_DETAIL, {
+            detail: BACKEND_STARTING_DETAIL,
+            statusCode: 503,
+          });
+        } else {
+          const [knowledgeBase, existingSessions] = await Promise.all([
+            this.loadKnowledgeBase(),
+            requestJson<SessionSummaryApiResponse[]>("/api/sessions"),
+          ]);
 
-    if (sessions.length === 0) {
-      activeSessionDetail = await this.createSession(ROOT_COLLECTION.id);
-      sessions = [
-        {
-          id: activeSessionDetail.session.id,
-          title: activeSessionDetail.session.title,
-          group: activeSessionDetail.session.group,
-          collectionId: activeSessionDetail.collectionId,
-          updatedAt: new Date().toISOString(),
-        },
-      ];
-    } else {
-      activeSessionDetail = await this.getSession(sessions[0].id);
+          let activeSessionDetail: SessionDetailRecord;
+          let sessions = existingSessions;
+
+          if (sessions.length === 0) {
+            activeSessionDetail = await this.createSession(ROOT_COLLECTION.id);
+            sessions = [
+              {
+                id: activeSessionDetail.session.id,
+                title: activeSessionDetail.session.title,
+                group: activeSessionDetail.session.group,
+                collectionId: activeSessionDetail.collectionId,
+                updatedAt: new Date().toISOString(),
+              },
+            ];
+          } else {
+            activeSessionDetail = await this.getSession(sessions[0].id);
+          }
+
+          return {
+            sessions: sessions.map(mapSessionSummary),
+            activeSessionId: activeSessionDetail.session.id,
+            collections: knowledgeBase.collections,
+            activeCollectionId: normalizeCollectionId(
+              activeSessionDetail.collectionId,
+              knowledgeBase.collections,
+            ),
+            messagesBySession: {
+              [activeSessionDetail.session.id]: activeSessionDetail.messages,
+            },
+            pipelineDocuments: knowledgeBase.pipelineDocuments,
+            knowledgeGraph: knowledgeBase.knowledgeGraph,
+            knowledgeBaseSummary: knowledgeBase.knowledgeBaseSummary,
+            thinkingSupported: health.thinkingSupported,
+          };
+        }
+      } catch (error) {
+        if (!isTransientBootstrapError(error)) {
+          throw error;
+        }
+        lastTransientError = error;
+      }
+
+      if (Date.now() + BOOTSTRAP_RETRY_DELAY_MS > deadline) {
+        break;
+      }
+
+      await waitForNextBootstrapAttempt();
     }
 
-    return {
-      sessions: sessions.map(mapSessionSummary),
-      activeSessionId: activeSessionDetail.session.id,
-      collections: knowledgeBase.collections,
-      activeCollectionId: normalizeCollectionId(
-        activeSessionDetail.collectionId,
-        knowledgeBase.collections,
-      ),
-      messagesBySession: {
-        [activeSessionDetail.session.id]: activeSessionDetail.messages,
-      },
-      pipelineDocuments: knowledgeBase.pipelineDocuments,
-      knowledgeGraph: knowledgeBase.knowledgeGraph,
-      knowledgeBaseSummary: knowledgeBase.knowledgeBaseSummary,
-      thinkingSupported: health.thinkingSupported,
-    };
+    throw lastTransientError ?? new ApiRequestError(BACKEND_STARTING_DETAIL, {
+      detail: BACKEND_STARTING_DETAIL,
+      statusCode: 503,
+    });
   },
 
   async listSessions(): Promise<SessionSummary[]> {
@@ -570,8 +645,7 @@ export const httpWorkbenchGateway = {
     });
 
     if (!response.ok) {
-      const payload = await response.json().catch(() => null);
-      throw new Error(payload?.detail ?? `Upload failed with status ${response.status}.`);
+      throw await buildApiRequestError(response);
     }
 
     return this.loadKnowledgeBase();
@@ -669,8 +743,7 @@ export const httpWorkbenchGateway = {
     });
 
     if (!response.ok) {
-      const payload = await response.json().catch(() => null);
-      throw new Error(payload?.detail ?? `Chat stream failed with status ${response.status}.`);
+      throw await buildApiRequestError(response);
     }
 
     const reader = response.body?.getReader();
@@ -770,8 +843,7 @@ export const httpWorkbenchGateway = {
       headers: buildHeaders(),
     });
     if (!response.ok) {
-      const payload = await response.json().catch(() => null);
-      throw new Error(payload?.detail ?? `Preview request failed with status ${response.status}.`);
+      throw await buildApiRequestError(response);
     }
 
     const payload = (await response.json()) as PreviewApiResponse;

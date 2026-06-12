@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, HTTPException, Request, status
 
 from app.core.config import Settings, get_settings
-from app.models.schemas import HealthResponse
+from app.dependencies import get_container, resolve_container_state
+from app.models.schemas import HealthResponse, ReadinessResponse
 
 if TYPE_CHECKING:
     from app.services.container import ServiceContainer
@@ -48,14 +49,13 @@ def _build_health_response(
 
 @router.get("/health", response_model=HealthResponse)
 def health(request: Request) -> HealthResponse:
-    startup_error = getattr(request.app.state, "container_startup_error", None)
+    container, startup_error = resolve_container_state(request)
     if startup_error is not None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The service failed during startup. Check backend logs for details.",
         )
 
-    container = getattr(request.app.state, "container", None)
     if container is None:
         settings = getattr(request.app.state, "settings", get_settings())
         return _build_health_response(
@@ -75,3 +75,9 @@ def health(request: Request) -> HealthResponse:
         parser_available=container.document_parser.is_available(),
         ocr_available=container.document_parser.ocr_pipeline_available(),
     )
+
+
+@router.get("/ready", response_model=ReadinessResponse)
+def ready(request: Request) -> ReadinessResponse:
+    get_container(request)
+    return ReadinessResponse()

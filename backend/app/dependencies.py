@@ -8,12 +8,17 @@ if TYPE_CHECKING:
     from app.services.container import ServiceContainer
 
 
-def get_container(request: Request) -> ServiceContainer:
+def resolve_container_state(request: Request) -> tuple[ServiceContainer | None, Exception | None]:
     container = getattr(request.app.state, "container", None)
+    startup_error = getattr(request.app.state, "container_startup_error", None)
+    return container, startup_error
+
+
+def get_container(request: Request) -> ServiceContainer:
+    container, startup_error = resolve_container_state(request)
     if container is not None:
         return container
 
-    startup_error = getattr(request.app.state, "container_startup_error", None)
     if startup_error is not None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

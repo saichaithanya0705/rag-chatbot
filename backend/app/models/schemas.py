@@ -107,6 +107,10 @@ class ChatRequest(BaseModel):
         return self
 
 
+class ReadinessResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+
+
 class ChatResponse(BaseModel):
     answer: str
     citations: list[CitationPayload]

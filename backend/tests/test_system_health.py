@@ -67,3 +67,24 @@ def test_health_returns_503_after_container_startup_failure() -> None:
 
     assert response.status_code == 503
     assert response.json()["detail"] == "The service failed during startup. Check backend logs for details."
+
+
+def test_ready_returns_503_while_container_is_still_starting() -> None:
+    app = _build_app()
+
+    with TestClient(app) as client:
+        response = client.get("/api/system/ready")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "The service is still starting up. Try again shortly."
+
+
+def test_ready_returns_ok_when_container_is_ready() -> None:
+    container = SimpleNamespace()
+    app = _build_app(container=container)
+
+    with TestClient(app) as client:
+        response = client.get("/api/system/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
