@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 
 from app.core.config import Settings, get_settings
 from app.dependencies import get_container, resolve_container_state
-from app.models.schemas import HealthResponse, ReadinessResponse
+from app.models.schemas import HealthResponse, LivenessResponse, ReadinessResponse
 
 if TYPE_CHECKING:
     from app.services.container import ServiceContainer
@@ -47,6 +47,11 @@ def _build_health_response(
     )
 
 
+@router.get("/live", response_model=LivenessResponse)
+def live() -> LivenessResponse:
+    return LivenessResponse()
+
+
 @router.get("/health", response_model=HealthResponse)
 def health(request: Request) -> HealthResponse:
     container, startup_error = resolve_container_state(request)
@@ -73,7 +78,10 @@ def health(request: Request) -> HealthResponse:
         indexed_chunks=container.document_service.count_indexed_chunks_all(),
         ingestion_mode=container.ingestion_dispatcher.mode,
         parser_available=container.document_parser.is_available(),
-        ocr_available=container.document_parser.ocr_pipeline_available(),
+        ocr_available=(
+            container.settings.docling_ocr_enabled
+            and container.document_parser.ocr_pipeline_available()
+        ),
     )
 
 

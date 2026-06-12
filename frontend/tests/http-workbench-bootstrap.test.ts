@@ -17,7 +17,8 @@ test("bootstrap waits for backend readiness before loading workspace data", asyn
   const originalFetch = globalThis.fetch;
   const calls: string[] = [];
   const responses = [
-    jsonResponse({ status: "starting", thinkingSupported: true }),
+    jsonResponse({ detail: BACKEND_STARTING_DETAIL }, 503),
+    jsonResponse({ status: "ok" }),
     jsonResponse({ status: "ok", thinkingSupported: true }),
     jsonResponse([]),
     jsonResponse([]),
@@ -50,7 +51,8 @@ test("bootstrap waits for backend readiness before loading workspace data", asyn
     assert.deepEqual(
       calls.map((url) => new URL(url).pathname),
       [
-        "/api/system/health",
+        "/api/system/ready",
+        "/api/system/ready",
         "/api/system/health",
         "/api/documents",
         "/api/topics",
@@ -68,6 +70,7 @@ test("bootstrap retries transient startup responses instead of failing permanent
   const originalFetch = globalThis.fetch;
   const calls: string[] = [];
   const responses = [
+    jsonResponse({ status: "ok" }),
     jsonResponse({ status: "ok", thinkingSupported: true }),
     jsonResponse({ detail: BACKEND_STARTING_DETAIL }, 503),
     jsonResponse([]),
@@ -81,6 +84,7 @@ test("bootstrap retries transient startup responses instead of failing permanent
         updatedAt: "2026-06-12T13:31:00Z",
       },
     ]),
+    jsonResponse({ status: "ok" }),
     jsonResponse({ status: "ok", thinkingSupported: true }),
     jsonResponse([]),
     jsonResponse([]),
@@ -119,7 +123,7 @@ test("bootstrap retries transient startup responses instead of failing permanent
     assert.equal(payload.sessions.length, 1);
     assert.equal(payload.thinkingSupported, true);
     assert.equal(
-      calls.filter((url) => new URL(url).pathname === "/api/system/health").length,
+      calls.filter((url) => new URL(url).pathname === "/api/system/ready").length,
       2,
     );
   } finally {

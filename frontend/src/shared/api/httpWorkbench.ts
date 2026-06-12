@@ -91,6 +91,10 @@ interface HealthApiResponse {
   thinkingSupported: boolean;
 }
 
+interface ReadinessApiResponse {
+  status: string;
+}
+
 interface SessionMessageApiResponse {
   id: string;
   role: Message["role"];
@@ -531,13 +535,23 @@ export const httpWorkbenchGateway = {
 
     while (Date.now() <= deadline) {
       try {
-        const health = await requestJson<HealthApiResponse>("/api/system/health");
-        if (health.status !== "ok") {
+        const ready = await requestJson<ReadinessApiResponse>("/api/system/ready");
+        if (ready.status !== "ok") {
           lastTransientError = new ApiRequestError(BACKEND_STARTING_DETAIL, {
             detail: BACKEND_STARTING_DETAIL,
             statusCode: 503,
           });
         } else {
+          const health = await requestJson<HealthApiResponse>("/api/system/health");
+          if (health.status !== "ok") {
+            lastTransientError = new ApiRequestError(BACKEND_STARTING_DETAIL, {
+              detail: BACKEND_STARTING_DETAIL,
+              statusCode: 503,
+            });
+            await waitForNextBootstrapAttempt();
+            continue;
+          }
+
           const [knowledgeBase, existingSessions] = await Promise.all([
             this.loadKnowledgeBase(),
             requestJson<SessionSummaryApiResponse[]>("/api/sessions"),

@@ -34,6 +34,16 @@ def test_health_reports_starting_without_container() -> None:
     assert payload["ocrAvailable"] is False
 
 
+def test_liveness_does_not_depend_on_container_startup() -> None:
+    app = _build_app(startup_error=RuntimeError("boom"))
+
+    with TestClient(app) as client:
+        response = client.get("/api/system/live")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
 def test_health_reports_global_parser_capabilities_when_container_is_ready() -> None:
     settings = replace(get_settings(), chat_model="deepseek-r1")
     container = SimpleNamespace(
@@ -57,6 +67,31 @@ def test_health_reports_global_parser_capabilities_when_container_is_ready() -> 
     assert payload["parserAvailable"] is True
     assert payload["ocrAvailable"] is False
     assert payload["thinkingSupported"] is True
+
+
+def test_health_skips_ocr_probe_when_ocr_is_disabled() -> None:
+    settings = replace(get_settings(), docling_ocr_enabled=False)
+
+    class _Parser:
+        def is_available(self) -> bool:
+            return True
+
+        def ocr_pipeline_available(self) -> bool:
+            raise AssertionError("disabled OCR must not be probed from health")
+
+    container = SimpleNamespace(
+        settings=settings,
+        document_service=SimpleNamespace(count_indexed_chunks_all=lambda: 0),
+        ingestion_dispatcher=SimpleNamespace(mode="local"),
+        document_parser=_Parser(),
+    )
+    app = _build_app(container=container, settings=settings)
+
+    with TestClient(app) as client:
+        response = client.get("/api/system/health")
+
+    assert response.status_code == 200
+    assert response.json()["ocrAvailable"] is False
 
 
 def test_health_returns_503_after_container_startup_failure() -> None:

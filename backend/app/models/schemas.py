@@ -111,6 +111,10 @@ class ReadinessResponse(BaseModel):
     status: Literal["ok"] = "ok"
 
 
+class LivenessResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+
+
 class ChatResponse(BaseModel):
     answer: str
     citations: list[CitationPayload]

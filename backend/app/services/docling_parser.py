@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
+import importlib.util
 from pathlib import Path
 import threading
 from typing import Any
@@ -32,6 +33,9 @@ class DoclingDocumentParser:
         self._table_structure_enabled = table_structure_enabled
         self._artifacts_path = artifacts_path
         self._converter_lock = threading.Lock()
+        self._capability_lock = threading.Lock()
+        self._docling_pipeline_available: bool | None = None
+        self._fallback_parser_available: bool | None = None
 
     @property
     def ocr_enabled(self) -> bool:
@@ -46,21 +50,19 @@ class DoclingDocumentParser:
         return self._artifacts_path
 
     def is_available(self) -> bool:
-        return self.ocr_pipeline_available() or self.fallback_parser_available()
+        return self.fallback_parser_available() or self.ocr_pipeline_available()
 
     def ocr_pipeline_available(self) -> bool:
-        try:
-            self._import_docling_converter_types()
-        except ImportError:
-            return False
-        return True
+        with self._capability_lock:
+            if self._docling_pipeline_available is None:
+                self._docling_pipeline_available = self._module_available("docling")
+            return self._docling_pipeline_available
 
     def fallback_parser_available(self) -> bool:
-        try:
-            self._import_pdfium_module()
-        except ImportError:
-            return False
-        return True
+        with self._capability_lock:
+            if self._fallback_parser_available is None:
+                self._fallback_parser_available = self._module_available("pypdfium2")
+            return self._fallback_parser_available
 
     def parse(self, pdf_path: Path) -> ParsedDocument:
         try:
@@ -183,6 +185,10 @@ class DoclingDocumentParser:
         import pypdfium2 as pdfium
 
         return pdfium
+
+    @staticmethod
+    def _module_available(module_name: str) -> bool:
+        return importlib.util.find_spec(module_name) is not None
 
     def _prepare_artifacts(self, artifacts_path: Path) -> None:
         artifacts_path.mkdir(parents=True, exist_ok=True)
