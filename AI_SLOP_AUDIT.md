@@ -2,7 +2,7 @@
 Score: 28/100, Low slop risk
 Confidence: Medium
 
-Scope: deployment-related edits made in this prompt and directly connected architecture only: `render.yaml`, `netlify.toml`, `backend/requirements.txt`, `backend/app/core/config.py`, `backend/app/main.py`, `backend/app/dependencies.py`, `backend/app/services/docling_parser.py`, `backend/app/services/document_service.py`, `backend/app/services/document_repository.py`, `backend/app/routers/system.py`, `backend/app/models/schemas.py`, `backend/tests/test_config.py`, `backend/tests/test_docling_parser.py`, `backend/tests/test_system_health.py`, and `frontend/src/app/providers/workbench/workbenchChatActions.test.ts`.
+Scope: deployment-related edits made in this prompt and directly connected architecture only: `render.yaml`, `netlify.toml`, `backend/requirements.txt`, `backend/app/core/config.py`, `backend/app/main.py`, `backend/app/dependencies.py`, `backend/app/services/docling_parser.py`, `backend/app/services/document_service.py`, `backend/app/services/document_repository.py`, `backend/app/services/nvidia_client.py`, `backend/app/routers/system.py`, `backend/app/models/schemas.py`, `backend/tests/test_config.py`, `backend/tests/test_docling_parser.py`, `backend/tests/test_nvidia_client.py`, `backend/tests/test_system_health.py`, and `frontend/src/app/providers/workbench/workbenchChatActions.test.ts`.
 
 Graphify freshness: `graphify-out/GRAPH_REPORT.md` dated 2026-05-17.
 
@@ -12,7 +12,7 @@ Important context: the bundled Graphify triage scanner reported `86/100` severe 
 - The prompt-touched path contained real deployment/runtime drift, not style-only suspicion: code referenced runtime dependencies that were absent from the declared backend manifest.
 - The affected backend config and parser code sit in high-blast-radius areas according to Graphify: `DoclingDocumentParser` is a god node with 29 edges, and Community 5 (`Settings`, `load_settings()`, runtime directories) is a central infrastructure cluster.
 - The parser capability contract had conflated “overall parser available” with “OCR-capable Docling pipeline available”, which made health reporting less truthful than the actual fallback behavior.
-- The backend boot path still imported the full container and ML dependency graph during `app.main` import, which delayed process start even after startup work moved to a background task.
+- The backend boot path still imported the full container and ML dependency graph during `app.main` import, and `NvidiaClient` still imported `sentence_transformers` eagerly even when the hosted NVIDIA API path was configured.
 - The frontend production build was blocked by a test harness typing bug in a file compiled by the production build path.
 - The confirmed issues in scope are now fixed and validated.
 
@@ -23,6 +23,7 @@ Important context: the bundled Graphify triage scanner reported `86/100` severe 
 | Deployment state path hard-coded to the repo layout | Community 5 contains `Settings`, `load_settings()`, and runtime directory creation; this is central infrastructure, not leaf code | `backend/app/core/config.py:96-108`, `backend/tests/test_config.py:13-39` | Confirmed slop signal | Deployment config was added before storage paths were made injectable | Added `RAG_DATA_DIR` path override and kept derived storage paths (`uploads`, `sqlite`, `chroma`, `kg`, `celery`, Docling artifacts) consistent under that root | Require stateful deploy paths to be environment-configurable before adding host blueprints |
 | Parser health contract collapsed two different capabilities into one flag | `DoclingDocumentParser` is a graph hub; Community 7 is the parser cluster and Community 5 is the health/config cluster | `backend/app/services/docling_parser.py:48-63`, `backend/app/models/schemas.py:8-20`, `backend/app/routers/system.py:24-36`, `backend/tests/test_docling_parser.py:174-199` | Confirmed slop signal | A single availability method was reused for both parser readiness and OCR readiness | Split capability reporting into `is_available()` for overall parsing path, `ocr_pipeline_available()` for Docling/OCR capability, and exposed `parserAvailable` separately in health response | Keep health endpoints capability-specific; do not reuse one boolean for multiple operational meanings |
 | Liveness and readiness were still coupled in the hosted boot path | Graphify lists `build_container()` and `ServiceContainer` as top central nodes; Community 5 contains `lifespan()` and settings/runtime helpers, so boot-path coupling here has repo-wide blast radius | `backend/app/main.py`, `backend/app/dependencies.py`, `backend/app/routers/system.py`, `backend/app/services/document_service.py`, `backend/app/services/document_repository.py`, `backend/tests/test_system_health.py` | Confirmed slop signal | Startup work was moved off the FastAPI lifespan critical path, but module import and health semantics still assumed a fully built container | Deferred container imports behind bootstrap, made `/api/system/health` answer without `x-user-id` during startup, added a global indexed-chunk count for platform health, and kept business endpoints behind `503` readiness checks | Add a cold-start import timing check and a hosted-health contract test to CI before deploy |
+| Hosted bootstrap still paid for local embedding fallback dependencies even on the cloud path | `build_container()` is a central graph hub, and `NvidiaClient` sits inside that boot chain | `backend/app/services/nvidia_client.py`, `backend/tests/test_nvidia_client.py` | Confirmed slop signal | `sentence_transformers` was imported at module load, so the cloud-only deployment still loaded heavyweight local embedding dependencies during bootstrap | Moved `sentence_transformers` behind a lazy helper that only imports on first local fallback use | Keep optional ML fallback dependencies behind call-time imports instead of module-level imports |
 | Frontend production build depended on a brittle test harness narrowing pattern | Community 12 contains `createWorkbenchChatActions()` and workbench state helpers, so build-breaking test issues in this cluster are not isolated noise | `frontend/src/app/providers/workbench/workbenchChatActions.test.ts:82-117` | Confirmed slop signal | Mutable async callback capture was asserted as if it were synchronously narrowed, causing the production TypeScript build to fail | Replaced the brittle assertion flow with an explicit runtime guard plus typed local binding so the test matches the gateway contract and the build remains green | Keep files under `src/` build-clean, or move pure tests out of the production compilation surface |
 
 **Aggressive Review Targets**
@@ -35,6 +36,7 @@ Important context: the bundled Graphify triage scanner reported `86/100` severe 
 - The deployment path now has explicit host config (`render.yaml`, `netlify.toml`) rather than dashboard-only hidden state.
 - The parser fallback behavior is now both implemented and reported more honestly.
 - The backend import path now avoids loading the service container graph during `app.main` import; local import time dropped from about `24.45s` to `0.84s`.
+- The embedding client no longer imports `sentence_transformers` unless local fallback embeddings are actually needed.
 - The frontend production build succeeds after the test harness correction.
 
 **Workflow Gaps**
@@ -50,6 +52,7 @@ Important context: the bundled Graphify triage scanner reported `86/100` severe 
 - Missing fresh-environment validation gate for backend dependencies.
 - Collapsed operational semantics in the parser health contract.
 - Importing the full service/container graph at module load even though hosted boot only needs the ASGI app object to bind first.
+- Importing heavyweight local embedding dependencies even when the deployment is configured for hosted NVIDIA embeddings.
 - Test harness logic living in the production compilation path without a build-focused guardrail.
 
 **Permanent Fixes**
@@ -57,7 +60,9 @@ Important context: the bundled Graphify triage scanner reported `86/100` severe 
 - Added `RAG_DATA_DIR` so deployments can relocate state without rewriting code or binding to the repository layout.
 - Split parser capability reporting into overall parser availability and OCR-pipeline availability.
 - Deferred heavy container imports behind async bootstrap, separated liveness health from container readiness, and added a global indexed-chunk count for non-user health checks.
+- Deferred `sentence_transformers` import until the first real local-fallback embedding call.
 - Strengthened tests around config overrides and fallback capability reporting.
+- Added `backend/tests/test_nvidia_client.py` so the cloud path cannot regress back to eager local model imports.
 - Added `backend/tests/test_system_health.py` to lock the startup/ready/error health contract.
 - Corrected the frontend test harness so the production build reflects real type-safe behavior.
 
@@ -75,6 +80,8 @@ Important context: the bundled Graphify triage scanner reported `86/100` severe 
   - Result: `8 passed`.
 - `D:\projects\chat\backend\.venv\Scripts\python.exe -m pytest tests\test_system_health.py tests\test_ingestion_dispatcher.py tests\test_docling_parser.py tests\test_config.py`
   - Result: `11 passed`.
+- `D:\projects\chat\backend\.venv\Scripts\python.exe -m pytest tests\test_nvidia_client.py tests\test_system_health.py tests\test_ingestion_dispatcher.py tests\test_docling_parser.py tests\test_config.py`
+  - Result: `13 passed`.
 - `D:\projects\chat\backend\.venv\Scripts\python.exe -c "import time; start=time.time(); import app.main; print(round(time.time()-start, 2))"`
   - Result: `0.84` seconds after deferring container imports; previously measured at `24.45` seconds.
 - `D:\projects\chat\backend\.venv\Scripts\python.exe -c "from app.main import app; print(app.title)"`

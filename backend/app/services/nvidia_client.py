@@ -6,12 +6,20 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
-from sentence_transformers import SentenceTransformer
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _load_sentence_transformer(model_name: str):
+    from sentence_transformers import SentenceTransformer
+
+    return SentenceTransformer(model_name, device="cpu")
 
 
 @dataclass(frozen=True)
@@ -49,13 +57,13 @@ class NvidiaClient:
         self._nvidia_api_key = nvidia_api_key or os.getenv("RAG_NVIDIA_API_KEY") or os.getenv("NVIDIA_API_KEY", "")
         self._expected_embedding_dimensions = expected_embedding_dimensions
 
-        # Load local SentenceTransformer only when NVIDIA NIM API is unconfigured
         self._embed_model_local = None
         if not self._nvidia_api_key:
-            LOGGER.info("Loading local SentenceTransformer model: %s", embed_model)
-            self._embed_model_local = SentenceTransformer(embed_model, device="cpu")
+            LOGGER.info(
+                "NVIDIA NIM API key missing. Local SentenceTransformer fallback will load on first embedding request."
+            )
         else:
-            LOGGER.info("NVIDIA NIM API key provided. Skipping pre-emptive local model loading.")
+            LOGGER.info("NVIDIA NIM API key provided. Skipping local SentenceTransformer loading.")
 
         self._generate_client = httpx.AsyncClient(
             base_url=self._nvidia_base_url,
@@ -147,7 +155,7 @@ class NvidiaClient:
             if "nvidia" in model_name.lower():
                 model_name = "sentence-transformers/all-MiniLM-L6-v2"
             LOGGER.info("Lazy loading fallback local SentenceTransformer model: %s", model_name)
-            self._embed_model_local = SentenceTransformer(model_name, device="cpu")
+            self._embed_model_local = _load_sentence_transformer(model_name)
         return self._embed_model_local
 
     def _validate_embedding_dimensions(self, embeddings: list[list[float]]) -> None:
