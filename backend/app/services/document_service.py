@@ -122,6 +122,9 @@ class DocumentService:
     def count_indexed_chunks(self, *, user_id: str) -> int:
         return self._document_repository.count_indexed_chunks(user_id=user_id)
 
+    def count_indexed_chunks_all(self) -> int:
+        return self._document_repository.count_indexed_chunks_all()
+
     def sync_chunk_publication_flags(self) -> None:
         self._chunk_metadata_service.sync_chunk_publication_flags()
 

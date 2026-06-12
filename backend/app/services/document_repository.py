@@ -217,6 +217,17 @@ class DocumentRepository:
             ).fetchone()
         return int(row["total_chunks"]) if row and row["total_chunks"] is not None else 0
 
+    def count_indexed_chunks_all(self) -> int:
+        with self._database.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT COALESCE(SUM(chunk_count), 0) AS total_chunks
+                FROM ingested_documents
+                WHERE status = 'indexed'
+                """
+            ).fetchone()
+        return int(row["total_chunks"]) if row and row["total_chunks"] is not None else 0
+
     def mark_chunks_indexed(self, document_id: str, *, user_id: str) -> None:
         with self._database.connect() as connection:
             connection.execute(

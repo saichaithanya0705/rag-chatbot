@@ -180,6 +180,23 @@ class DoclingDocumentParserTests(unittest.TestCase):
             parser = _NoDownloadParser(artifacts_path=Path(temp_dir) / "models")
 
             self.assertTrue(parser.is_available())
+            self.assertTrue(parser.ocr_pipeline_available())
+
+    def test_fallback_availability_is_reported_when_docling_pipeline_is_missing(self) -> None:
+        class _FallbackOnlyParser(DoclingDocumentParser):
+            @staticmethod
+            def _import_docling_converter_types() -> tuple[object, object, object, object, object]:
+                raise ImportError("docling unavailable")
+
+            @staticmethod
+            def _import_pdfium_module() -> object:
+                return object()
+
+        parser = _FallbackOnlyParser()
+
+        self.assertTrue(parser.is_available())
+        self.assertFalse(parser.ocr_pipeline_available())
+        self.assertTrue(parser.fallback_parser_available())
 
     def test_prepare_artifacts_downloads_only_enabled_pipeline_models(self) -> None:
         calls: list[tuple[Path, bool, bool]] = []

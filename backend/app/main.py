@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
+import asyncio
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,26 +18,54 @@ from app.routers import (
     system_router,
     topics_router,
 )
-from app.services.container import build_container
 
 settings = load_settings()
+logger = logging.getLogger(__name__)
+
+
+def _bootstrap_container_sync():
+    from app.services.container import build_container
+
+    container = build_container(settings)
+    container.document_service.sync_active_chunk_metadata()
+    container.ingestion_dispatcher.start(container=container)
+    return container
+
+
+async def _bootstrap_container(app: FastAPI) -> None:
+    try:
+        app.state.container = await asyncio.to_thread(_bootstrap_container_sync)
+    except Exception as error:  # noqa: BLE001
+        app.state.container_startup_error = error
+        logger.exception("Backend container bootstrap failed.")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     ensure_runtime_directories(settings)
-    container = build_container(settings)
-    app.state.container = container
-    container.document_service.sync_active_chunk_metadata()
-    container.ingestion_dispatcher.start(container=container)
+    app.state.container = None
+    app.state.container_startup_error = None
+    bootstrap_task = asyncio.create_task(_bootstrap_container(app))
+    app.state.container_bootstrap_task = bootstrap_task
     try:
         yield
     finally:
-        await container.ingestion_dispatcher.aclose()
-        await container.aclose()
+        if not bootstrap_task.done():
+            bootstrap_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await bootstrap_task
+        else:
+            with suppress(Exception):
+                await bootstrap_task
+
+        container = app.state.container
+        if container is not None:
+            await container.ingestion_dispatcher.aclose()
+            await container.aclose()
 
 
 app = FastAPI(title=settings.project_name, lifespan=lifespan)
+app.state.settings = settings
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,

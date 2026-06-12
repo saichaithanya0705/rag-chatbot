@@ -3,12 +3,15 @@ from __future__ import annotations
 import json
 import re
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.dependencies import get_container, get_user_id
 from app.models.schemas import CreateSessionRequest, SessionDetailResponse, SessionSummaryPayload
-from app.services.container import ServiceContainer
+
+if TYPE_CHECKING:
+    from app.services.container import ServiceContainer
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 

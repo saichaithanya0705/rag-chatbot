@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -10,7 +11,9 @@ from fastapi.responses import StreamingResponse
 from app.dependencies import get_container, get_user_id
 from app.models.schemas import ChatRequest, ChatResponse
 from app.services.answer_trace import build_answer_trace
-from app.services.container import ServiceContainer
+
+if TYPE_CHECKING:
+    from app.services.container import ServiceContainer
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 KEEPALIVE_INTERVAL_SECONDS = 8.0

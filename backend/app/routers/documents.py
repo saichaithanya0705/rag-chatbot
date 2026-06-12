@@ -4,13 +4,16 @@ from pathlib import Path
 import shutil
 from urllib.parse import quote
 from uuid import uuid4
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.dependencies import get_container, get_user_id
 from app.models.schemas import IngestedDocumentSummary, PreviewResponse
-from app.services.container import ServiceContainer
+
+if TYPE_CHECKING:
+    from app.services.container import ServiceContainer
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 UPLOAD_CHUNK_SIZE = 1024 * 1024

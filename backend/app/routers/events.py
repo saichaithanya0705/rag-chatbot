@@ -3,13 +3,15 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
 from app.dependencies import get_container, get_user_id
-from app.services.container import ServiceContainer
+
+if TYPE_CHECKING:
+    from app.services.container import ServiceContainer
 
 router = APIRouter(prefix="/events", tags=["events"])
 

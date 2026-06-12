@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, Depends
 
 from app.dependencies import get_container, get_user_id
 from app.models.schemas import GraphResponse
-from app.services.container import ServiceContainer
+
+if TYPE_CHECKING:
+    from app.services.container import ServiceContainer
 
 router = APIRouter(prefix="/kg", tags=["kg"])
 
