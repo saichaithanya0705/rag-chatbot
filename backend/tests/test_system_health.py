@@ -125,3 +125,16 @@ def test_ready_returns_ok_when_container_is_ready() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_public_root_describes_api_entrypoint() -> None:
+    from app.main import app
+
+    root_route = next(route for route in app.routes if getattr(route, "path", None) == "/")
+
+    assert root_route.endpoint() == {
+        "service": "Local RAG Chat Backend",
+        "status": "ok",
+        "documentation": "/docs",
+        "readiness": "/api/system/ready",
+    }

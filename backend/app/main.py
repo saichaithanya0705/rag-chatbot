@@ -75,6 +75,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.get("/", include_in_schema=False)
+def public_api_entrypoint() -> dict[str, str]:
+    return {
+        "service": settings.project_name,
+        "status": "ok",
+        "documentation": "/docs",
+        "readiness": f"{settings.api_prefix}/system/ready",
+    }
+
+
 app.include_router(system_router, prefix=settings.api_prefix)
 app.include_router(documents_router, prefix=settings.api_prefix)
 app.include_router(events_router, prefix=settings.api_prefix)
