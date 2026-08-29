@@ -3,9 +3,31 @@ import type { WorkbenchState } from "./workbenchTypes";
 export const COMPACT_VIEWPORT_MEDIA_QUERY = "(max-width: 960px)";
 export const THINKING_ENABLED_STORAGE_KEY = "local-rag-chat/thinking-enabled";
 export const DETAILED_ANSWER_STORAGE_KEY = "local-rag-chat/detailed-answer-enabled";
+export const THEME_STORAGE_KEY = "local-rag-chat/theme";
 
 export function getInitialCompactViewport() {
   return typeof window !== "undefined" && window.matchMedia(COMPACT_VIEWPORT_MEDIA_QUERY).matches;
+}
+
+export function getInitialTheme(): "light" | "dark" {
+  if (typeof window === "undefined") {
+    return "light";
+  }
+
+  const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+  if (storedTheme === "dark" || storedTheme === "light") {
+    return storedTheme;
+  }
+
+  return "light";
+}
+
+export function persistTheme(nextTheme: "light" | "dark") {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
 }
 
 export function getInitialThinkingEnabled() {
@@ -89,5 +111,6 @@ export function createInitialWorkbenchState(): WorkbenchState {
     toastMessage: null,
     draftImages: [],
     thinkingSupported: false,
+    theme: getInitialTheme(),
   };
 }

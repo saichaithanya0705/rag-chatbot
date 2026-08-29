@@ -25,7 +25,7 @@ export function ChatComposer() {
     const textarea = textareaRef.current;
     const rafId = requestAnimationFrame(() => {
       textarea.style.height = "auto";
-      const nextHeight = Math.min(textarea.scrollHeight, 140);
+      const nextHeight = Math.min(textarea.scrollHeight, 200);
       textarea.style.height = `${nextHeight}px`;
     });
 

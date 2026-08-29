@@ -39,6 +39,7 @@ export interface WorkbenchState {
   detailedAnswerEnabled: boolean;
   draftImages: Array<{ data: string; mimeType: string; url: string }>;
   thinkingSupported: boolean;
+  theme: "light" | "dark";
 }
 
 export interface WorkbenchActions {
@@ -66,6 +67,7 @@ export interface WorkbenchActions {
   addDraftImage: (image: { data: string; mimeType: string; url: string }) => void;
   removeDraftImage: (index: number) => void;
   clearDraftImages: () => void;
+  toggleTheme: () => void;
 }
 
 export interface WorkbenchContextValue {

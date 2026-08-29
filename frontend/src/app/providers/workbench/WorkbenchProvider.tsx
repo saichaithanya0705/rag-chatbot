@@ -16,6 +16,7 @@ import type {
 import {
   COMPACT_VIEWPORT_MEDIA_QUERY,
   createInitialWorkbenchState,
+  persistTheme,
 } from "./workbenchInitialState";
 import { useStableWorkbenchActions } from "./workbenchActions";
 import { createWorkbenchChatActions } from "./workbenchChatActions";
@@ -220,6 +221,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    document.documentElement.setAttribute("data-theme", state.theme);
+  }, [state.theme]);
+
+  useEffect(() => {
     pipelineDocumentsRef.current = state.pipelineDocuments;
   }, [state.pipelineDocuments]);
 
@@ -366,6 +371,17 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     }));
   }
 
+  function toggleTheme() {
+    setState((previous) => {
+      const nextTheme = previous.theme === "light" ? "dark" : "light";
+      persistTheme(nextTheme);
+      return {
+        ...previous,
+        theme: nextTheme,
+      };
+    });
+  }
+
   function clearToast() {
     setState((previous) => ({
       ...previous,
@@ -419,6 +435,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     addDraftImage,
     removeDraftImage,
     clearDraftImages,
+    toggleTheme,
   });
 
   const value: WorkbenchContextValue = useMemo(

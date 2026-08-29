@@ -437,10 +437,10 @@
 .compactTraceDetails {
   display: block;
   margin-bottom: 10px;
-  border-left: 2.5px solid var(--border-strong);
+  border-left: 3px solid var(--border-strong);
   background: var(--surface-soft);
-  border-radius: 6px;
-  padding: 6px 12px;
+  border-radius: var(--radius-card);
+  padding: 8px 14px;
   font-size: 11px;
   border: 0.5px solid var(--border-soft);
   box-shadow: var(--shadow-soft);
@@ -483,11 +483,11 @@
 .modelThinkingDetails {
   display: block;
   margin-bottom: 12px;
-  border-left: 2.5px solid var(--accent);
-  background: rgba(127, 119, 221, 0.04);
-  border-radius: 6px;
-  padding: 8px 12px;
-  border: 0.5px solid rgba(127, 119, 221, 0.08);
+  border-left: 3px solid var(--accent);
+  background: var(--surface-accent);
+  border-radius: var(--radius-card);
+  padding: 10px 14px;
+  border: 0.5px solid var(--border-soft);
   box-shadow: var(--shadow-soft);
 }
 

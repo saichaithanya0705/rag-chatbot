@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+.env.*
+data/
+*.db
+*.sqlite3
+.git/
+.gitignore
+.vscode/
+*.md
+test_*.py
+inspect_*.py
+reproduce_*.py

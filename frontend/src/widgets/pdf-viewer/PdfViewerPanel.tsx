@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkbench } from "@/app/providers/workbench/WorkbenchProvider";
 import { cn } from "@/shared/lib/cn";
+import { PdfCanvasViewer } from "./PdfCanvasViewer";
 import styles from "./pdf-viewer.module.css";
 
 interface PdfViewerPanelProps {
@@ -377,18 +378,10 @@ export function PdfViewerPanel({ open }: PdfViewerPanelProps) {
         ) : preview ? (
           activeTab === "pdf" ? (
             <div className={styles.iframeContainer}>
-              {state.isPdfPreviewLoading && (
-                <div className={styles.loadingOverlay}>
-                  <div className={styles.loadingSpinner} />
-                  <span>Loading PDF layout...</span>
-                </div>
-              )}
-              {iframeSrc ? (
-                <iframe
-                  key={iframeSrc}
-                  src={iframeSrc}
-                  className={styles.pdfIframe}
-                  title="PDF Native Viewer"
+              {preview?.fileUrl ? (
+                <PdfCanvasViewer
+                  fileUrl={preview.fileUrl}
+                  pageNumber={requestedPage}
                 />
               ) : (
                 <div className={styles.pdfState}>

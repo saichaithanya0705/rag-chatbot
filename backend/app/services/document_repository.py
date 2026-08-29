@@ -239,6 +239,18 @@ class DocumentRepository:
                 (document_id, user_id),
             )
 
+    def get_chunk_ids_for_document(self, document_id: str, *, user_id: str) -> list[str]:
+        with self._database.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT chunk_id
+                FROM retrieval_chunks
+                WHERE document_id = ? AND user_id = ?
+                """,
+                (document_id, user_id),
+            ).fetchall()
+        return [str(row["chunk_id"]) for row in rows]
+
     def clear_document_content(self, document_id: str, *, user_id: str) -> None:
         with self._database.connect() as connection:
             connection.execute(

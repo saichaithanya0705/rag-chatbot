@@ -3,7 +3,10 @@ from __future__ import annotations
 import logging
 from collections import Counter
 import importlib.util
+import json
 from pathlib import Path
+import shutil
+import tempfile
 import threading
 from typing import Any
 import unicodedata
@@ -18,7 +21,9 @@ REPEATED_MARGIN_MIN_PAGES = 2
 
 
 class DoclingDocumentParser:
-    parser_name = "docling"
+    """Hybrid multi-engine document parser combining OpenDataLoader PDF, Docling, and pypdfium2."""
+
+    parser_name = "hybrid_document_parser"
 
     def __init__(
         self,
@@ -34,6 +39,7 @@ class DoclingDocumentParser:
         self._artifacts_path = artifacts_path
         self._converter_lock = threading.Lock()
         self._capability_lock = threading.Lock()
+        self._opendataloader_available: bool | None = None
         self._docling_pipeline_available: bool | None = None
         self._fallback_parser_available: bool | None = None
 
@@ -50,7 +56,19 @@ class DoclingDocumentParser:
         return self._artifacts_path
 
     def is_available(self) -> bool:
-        return self.fallback_parser_available() or self.ocr_pipeline_available()
+        return (
+            self.opendataloader_available()
+            or self.fallback_parser_available()
+            or self.ocr_pipeline_available()
+        )
+
+    def opendataloader_available(self) -> bool:
+        with self._capability_lock:
+            if self._opendataloader_available is None:
+                has_module = self._module_available("opendataloader_pdf")
+                has_java = shutil.which("java") is not None
+                self._opendataloader_available = has_module and has_java
+            return self._opendataloader_available
 
     def ocr_pipeline_available(self) -> bool:
         with self._capability_lock:
@@ -65,74 +83,214 @@ class DoclingDocumentParser:
             return self._fallback_parser_available
 
     def parse(self, pdf_path: Path) -> ParsedDocument:
-        try:
-            pdfium = self._import_pdfium_module()
-            doc = pdfium.PdfDocument(pdf_path)
-            page_count = len(doc)
-            # Directly bypass docling layout parser for large PDFs (> 50 pages) to avoid OOM crashes
-            if page_count > 50:
-                LOGGER.info(
-                    "PDF page count (%d) exceeds threshold (50). Direct bypass to high-speed pypdfium2 parser to conserve memory.",
-                    page_count,
-                )
-                return self._parse_fallback_pdfium(pdf_path)
-        except Exception as e:
-            LOGGER.warning("Pre-flight page count check failed: %s. Proceeding with standard parser.", e)
+        # Tier 1: OpenDataLoader PDF (Ultra-high throughput deterministic + hybrid layout parsing)
+        if self.opendataloader_available():
+            try:
+                LOGGER.info("Attempting extraction with OpenDataLoader PDF parser: %s", pdf_path)
+                return self._parse_opendataloader(pdf_path)
+            except Exception as error:
+                LOGGER.warning("OpenDataLoader PDF parser failed (%s), trying next engine.", error)
 
-        try:
-            converter = self._ensure_converter()
-            result = converter.convert(pdf_path)
-            document = result.document
-            pages = self._pages_from_docling_document(document)
-            if not pages:
-                raise ValueError("Docling did not extract readable page content from the PDF.")
-            return ParsedDocument(parser_name=self.parser_name, pages=pages)
-        except Exception as error:
-            LOGGER.warning(
-                "Docling parser failed due to error: %s. Falling back to high-speed pypdfium2 parser.",
-                error,
-                exc_info=True,
+        # Tier 2: Docling Vision Parser (IBM model pipeline for OCR & TableFormer)
+        if self.ocr_pipeline_available():
+            try:
+                LOGGER.info("Attempting extraction with Docling vision parser: %s", pdf_path)
+                converter = self._ensure_converter()
+                result = converter.convert(pdf_path)
+                document = result.document
+                pages = self._pages_from_docling_document(document)
+                if pages:
+                    return ParsedDocument(parser_name="docling", pages=pages)
+            except Exception as error:
+                LOGGER.warning("Docling parser failed (%s), falling back to high-speed engine.", error)
+
+        # Tier 3: High-speed, zero-dependency pypdfium2 parser
+        return self._parse_fallback_pdfium(pdf_path)
+
+    def _parse_opendataloader(self, pdf_path: Path) -> ParsedDocument:
+        import opendataloader_pdf
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            opendataloader_pdf.convert(
+                input_path=str(pdf_path),
+                output_dir=tmpdir,
+                format="json",
+                quiet=True,
             )
-            return self._parse_fallback_pdfium(pdf_path)
+            json_files = list(Path(tmpdir).glob("*.json"))
+            if not json_files:
+                raise ValueError("OpenDataLoader did not produce any JSON output.")
+
+            with open(json_files[0], "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            pages = self._pages_from_opendataloader_json(data)
+            if not pages:
+                raise ValueError("No pages could be extracted from OpenDataLoader JSON structure.")
+
+            LOGGER.info("Successfully parsed document with OpenDataLoader PDF. Pages: %d", len(pages))
+            return ParsedDocument(parser_name="opendataloader_pdf", pages=pages)
+
+    def _pages_from_opendataloader_json(self, data: Any) -> list[ParsedPage]:
+        """Parse the `kids` array produced by opendataloader-pdf v2.x."""
+        blocks_by_page: dict[int, list[ParsedBlock]] = {}
+
+        kids = data.get("kids", []) if isinstance(data, dict) else []
+        if not kids:
+            return []
+
+        for kid_idx, kid in enumerate(kids):
+            kid_type = str(kid.get("type", "")).lower()
+
+            # Skip images — no text content
+            if kid_type == "image":
+                continue
+
+            # Tables: extract text from rows/cells
+            if kid_type == "table":
+                text = self._extract_table_text(kid)
+            else:
+                text = str(kid.get("content", kid.get("text", kid.get("source", "")))).strip()
+
+            if not text:
+                continue
+
+            page_num = int(kid.get("page number", kid.get("page_number", 1)))
+            raw_bbox = kid.get("bounding box", kid.get("bbox"))
+            bbox = self._normalize_bbox(raw_bbox)
+
+            # Map OpenDataLoader types to our labels
+            label = kid_type
+            if kid_type == "heading":
+                heading_level = kid.get("heading level", kid.get("level", ""))
+                label = f"heading_{heading_level}" if heading_level else "heading"
+            elif kid_type == "caption":
+                label = "caption"
+            elif kid_type == "list":
+                label = "list"
+                text = self._extract_list_text(kid)
+                if not text:
+                    continue
+
+            page_height = 842.0  # PDF default A4 height
+            if bbox:
+                # OpenDataLoader bbox is [l, bottom, r, top] in PDF coords
+                # We store top/bottom as visual top/bottom
+                top = float(bbox["t"])
+                bottom = float(bbox["b"])
+            else:
+                top = 0.0
+                bottom = page_height
+
+            blocks_by_page.setdefault(page_num, []).append(
+                ParsedBlock(
+                    text=text,
+                    page_number=page_num,
+                    label=label,
+                    top=top,
+                    bottom=bottom,
+                    page_height=page_height,
+                    bbox=bbox,
+                    source_ref=f"page_{page_num}_block_{kid_idx}",
+                    content_layer="text",
+                )
+            )
+
+        blocks_by_page = self._filter_repeated_margin_blocks(blocks_by_page)
+        return [
+            ParsedPage(page_number=page_number, blocks=blocks)
+            for page_number, blocks in sorted(blocks_by_page.items())
+            if blocks
+        ]
+
+    @staticmethod
+    def _extract_table_text(kid: dict) -> str:
+        """Extract readable text from an OpenDataLoader table structure."""
+        rows = kid.get("rows", [])
+        if not rows:
+            return ""
+        lines = []
+        for row in rows:
+            cells = row.get("cells", [])
+            cell_texts = []
+            for cell in cells:
+                cell_text = str(cell.get("content", cell.get("text", ""))).strip()
+                if cell_text:
+                    cell_texts.append(cell_text)
+            if cell_texts:
+                lines.append(" | ".join(cell_texts))
+        return "\n".join(lines)
+
+    @staticmethod
+    def _extract_list_text(kid: dict) -> str:
+        """Extract readable text from an OpenDataLoader list structure."""
+        items = kid.get("kids", kid.get("items", []))
+        if not items:
+            return str(kid.get("content", kid.get("text", ""))).strip()
+        parts = []
+        for item in items:
+            text = str(item.get("content", item.get("text", ""))).strip()
+            if text:
+                parts.append(f"• {text}")
+        return "\n".join(parts)
+
+    @staticmethod
+    def _normalize_bbox(raw_bbox: Any) -> dict[str, float] | None:
+        if raw_bbox is None:
+            return None
+        if isinstance(raw_bbox, (list, tuple)) and len(raw_bbox) >= 4:
+            return {
+                "l": float(raw_bbox[0]),
+                "t": float(raw_bbox[1]),
+                "r": float(raw_bbox[2]),
+                "b": float(raw_bbox[3]),
+            }
+        if isinstance(raw_bbox, dict):
+            keys = {"l", "t", "r", "b"}
+            if keys.issubset(raw_bbox.keys()):
+                return {k: float(raw_bbox[k]) for k in keys}
+        return None
 
     def _parse_fallback_pdfium(self, pdf_path: Path) -> ParsedDocument:
         pdfium = self._import_pdfium_module()
         LOGGER.info("Starting lightweight pypdfium2 fallback parser for: %s", pdf_path)
         doc = pdfium.PdfDocument(pdf_path)
         pages: list[ParsedPage] = []
-        
-        for index in range(len(doc)):
-            page_number = index + 1
-            try:
-                page = doc[index]
-                width, height = page.get_size()
-                textpage = page.get_textpage()
-                text = textpage.get_text_bounded()
-                
-                blocks: list[ParsedBlock] = []
-                paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
-                
-                if not paragraphs and text.strip():
-                    paragraphs = [text.strip()]
+        try:
+            for index in range(len(doc)):
+                page_number = index + 1
+                try:
+                    page = doc[index]
+                    width, height = page.get_size()
+                    textpage = page.get_textpage()
+                    text = textpage.get_text_bounded()
                     
-                for block_index, paragraph in enumerate(paragraphs):
-                    blocks.append(
-                        ParsedBlock(
-                            text=paragraph,
-                            page_number=page_number,
-                            label="paragraph",
-                            top=0.0,
-                            bottom=height,
-                            page_height=height,
-                            bbox={"l": 0.0, "t": 0.0, "r": width, "b": height},
-                            source_ref=f"page_{page_number}_block_{block_index}",
-                            content_layer="text"
+                    blocks: list[ParsedBlock] = []
+                    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+                    
+                    if not paragraphs and text.strip():
+                        paragraphs = [text.strip()]
+                        
+                    for block_index, paragraph in enumerate(paragraphs):
+                        blocks.append(
+                            ParsedBlock(
+                                text=paragraph,
+                                page_number=page_number,
+                                label="paragraph",
+                                top=0.0,
+                                bottom=height,
+                                page_height=height,
+                                bbox={"l": 0.0, "t": 0.0, "r": width, "b": height},
+                                source_ref=f"page_{page_number}_block_{block_index}",
+                                content_layer="text",
+                            )
                         )
-                    )
-                if blocks:
-                    pages.append(ParsedPage(page_number=page_number, blocks=blocks))
-            except Exception as e:
-                LOGGER.warning("Failed parsing page %d with pypdfium2: %s", page_number, e)
+                    if blocks:
+                        pages.append(ParsedPage(page_number=page_number, blocks=blocks))
+                except Exception as e:
+                    LOGGER.warning("Failed parsing page %d with pypdfium2: %s", page_number, e)
+        finally:
+            doc.close()
                 
         if not pages:
             raise ValueError("Both Docling and pypdfium2 fallback failed to extract readable page content.")

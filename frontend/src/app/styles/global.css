@@ -104,7 +104,7 @@ a {
 }
 
 :focus-visible {
-  outline: 2px solid rgba(127, 119, 221, 0.56);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 

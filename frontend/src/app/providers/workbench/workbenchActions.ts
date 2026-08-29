@@ -26,6 +26,7 @@ export const WORKBENCH_ACTION_KEYS = [
   "addDraftImage",
   "removeDraftImage",
   "clearDraftImages",
+  "toggleTheme",
 ] satisfies (keyof WorkbenchActions)[];
 
 export function makeWorkbenchActionProxy(actionsRef: { current: WorkbenchActions }): WorkbenchActions {
@@ -54,6 +55,7 @@ export function makeWorkbenchActionProxy(actionsRef: { current: WorkbenchActions
     addDraftImage: (...args) => actionsRef.current.addDraftImage(...args),
     removeDraftImage: (...args) => actionsRef.current.removeDraftImage(...args),
     clearDraftImages: (...args) => actionsRef.current.clearDraftImages(...args),
+    toggleTheme: (...args) => actionsRef.current.toggleTheme(...args),
   };
 }
 

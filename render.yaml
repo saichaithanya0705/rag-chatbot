@@ -1,15 +1,12 @@
 services:
   - type: web
     name: rag-chatbot-backend
-    runtime: python
+    runtime: docker
     plan: free
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /api/system/live
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
+    healthCheckPath: /api/system/health
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.9
       - key: RAG_NVIDIA_API_KEY
         sync: false
       - key: RAG_ALLOWED_ORIGINS
@@ -25,8 +22,6 @@ services:
       - key: RAG_EMBEDDING_DIMENSIONS
         value: "1024"
       - key: RAG_DOCLING_OCR
-        value: "false"
-      - key: RAG_ENABLE_OCR
         value: "false"
       - key: RAG_DOCLING_TABLE_STRUCTURE
         value: "false"

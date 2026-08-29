@@ -317,3 +317,42 @@
     opacity: 1;
   }
 }
+
+.sidebarFooter {
+  padding: 10px 14px;
+  border-top: 0.5px solid var(--border-soft);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.themeToggleBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all var(--transition-fast);
+}
+
+.themeToggleBtn:hover {
+  background: var(--surface-base);
+  color: var(--text-strong);
+  border-color: var(--border-soft);
+  box-shadow: var(--shadow-soft);
+}
+
+.themeToggleBtn svg {
+  flex-shrink: 0;
+  color: var(--text-subtle-aa);
+}
+
+.themeToggleBtn:hover svg {
+  color: var(--accent);
+}
+

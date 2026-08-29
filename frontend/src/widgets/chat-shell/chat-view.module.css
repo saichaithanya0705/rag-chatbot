@@ -271,9 +271,9 @@
 }
 
 .inputArea {
-  padding: 12px 16px 14px;
+  padding: 16px 20px;
   border-top: 0.5px solid var(--border-soft);
-  box-shadow: 0 -2px 8px rgba(44, 42, 30, 0.04);
+  background: var(--surface-base);
 }
 
 .inputLabelRow {
@@ -304,21 +304,23 @@
 
 .msgInput {
   flex: 1;
-  padding: 9px 13px;
+  padding: 10px 14px;
   border: 0.5px solid var(--border-strong);
-  border-radius: 10px;
-  font-size: var(--font-md);
-  background: var(--surface-base);
+  border-radius: var(--radius-input);
+  font-size: var(--font-base);
+  background: var(--surface-soft);
   color: var(--text-strong);
   resize: none;
   line-height: 1.5;
   outline: none;
+  transition: all var(--transition-fast);
 }
 
 .msgInput:focus,
 .msgInput:focus-visible {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(127, 119, 221, 0.16);
+  background: var(--surface-base);
+  box-shadow: 0 0 0 2.5px rgba(43, 76, 126, 0.12);
 }
 
 .msgInput:disabled {
@@ -328,21 +330,23 @@
 }
 
 .sendBtn {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
   background: var(--accent);
   border: none;
-  color: var(--surface-accent);
+  color: var(--surface-base);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  transition: all var(--transition-fast);
 }
 
 .sendBtn:hover {
   background: var(--accent-strong);
+  transform: scale(1.04);
 }
 
 .stopBtn {
@@ -350,16 +354,17 @@
 }
 
 .stopBtn:hover {
-  background: #c53c3b;
+  background: #a32a2a;
 }
 
 .sendBtn:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
 .sendBtn:disabled:hover {
   background: var(--accent);
+  transform: none;
 }
 
 .stopBtn:disabled:hover {
@@ -380,10 +385,10 @@
 }
 
 .dot {
-  width: 4px;
-  height: 4px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
-  background-color: var(--surface-base);
+  background-color: var(--accent);
   animation: dotPulse 1.4s infinite ease-in-out both;
 }
 
@@ -543,9 +548,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
   border: 0.5px solid var(--border-strong);
   background: var(--surface-base);
   color: var(--text-muted);
@@ -555,9 +560,9 @@
 }
 
 .attachBtn:hover {
-  background: var(--surface-muted);
-  color: var(--text-strong);
-  border-color: var(--accent);
+  background: var(--surface-soft);
+  color: var(--accent);
+  border-color: var(--accent-border);
 }
 
 .attachBtn:disabled {
@@ -622,3 +627,87 @@
 .removeDraftBtn:hover {
   background: rgba(239, 68, 68, 0.95);
 }
+
+.settingsDropdownRef {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.settingsBtn {
+  border-radius: 50%;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0.5px solid var(--border-soft);
+  background: var(--surface-base);
+  color: var(--text-muted);
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.settingsBtn:hover,
+.settingsBtnActive {
+  background: var(--surface-soft);
+  color: var(--accent);
+  border-color: var(--accent-border);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.settingsMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 280px;
+  background: var(--surface-base);
+  border: 0.5px solid var(--border-soft);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-floating);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 30;
+  animation: scaleIn 180ms ease;
+}
+
+.settingsMenuTitle {
+  margin: 0 0 4px;
+  font-family: var(--font-heading);
+  font-size: var(--font-base);
+  font-weight: 600;
+  color: var(--text-strong);
+  border-bottom: 0.5px solid var(--border-soft);
+  padding-bottom: 6px;
+}
+
+.settingsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+}
+
+.settingsLabelBlock {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.settingsLabel {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.settingsDesc {
+  font-size: var(--font-xxs);
+  color: var(--text-subtle-aa);
+  margin-top: 2px;
+  line-height: 1.3;
+}
+

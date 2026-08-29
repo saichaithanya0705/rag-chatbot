@@ -137,8 +137,10 @@ class DocumentService:
         return self._catalog_service.retrieval_corpus_version()
 
     def clear_document_content(self, document_id: str, *, user_id: str) -> None:
+        chunk_ids = self._document_repository.get_chunk_ids_for_document(document_id, user_id=user_id)
         self._document_repository.clear_document_content(document_id, user_id=user_id)
-        self._chunk_store_service.delete_chunks_for_document(document_id, user_id)
+        if chunk_ids:
+            self._chunk_store_service.delete_chunk_ids(chunk_ids)
         self._catalog_service.bump_retrieval_corpus_version()
 
     def upsert_chunk_catalog_entries(

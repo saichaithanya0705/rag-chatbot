@@ -185,24 +185,24 @@
 }
 
 :global(.pdf-highlight) {
-  background: rgba(127, 119, 221, 0.22);
-  border-bottom: 2px solid var(--accent);
+  background: rgba(200, 90, 50, 0.22);
+  border-bottom: 2px solid var(--warning);
   color: var(--text-strong);
   border-radius: 2px;
   padding: 1px 4px;
   font-weight: 600;
-  box-shadow: 0 0 8px rgba(127, 119, 221, 0.3);
+  box-shadow: 0 0 8px rgba(200, 90, 50, 0.3);
   animation: pulseHighlight 2s infinite ease-in-out;
 }
 
 @keyframes pulseHighlight {
   0%, 100% {
-    background-color: rgba(127, 119, 221, 0.22);
-    box-shadow: 0 0 8px rgba(127, 119, 221, 0.3);
+    background-color: rgba(200, 90, 50, 0.22);
+    box-shadow: 0 0 8px rgba(200, 90, 50, 0.3);
   }
   50% {
-    background-color: rgba(127, 119, 221, 0.38);
-    box-shadow: 0 0 14px rgba(127, 119, 221, 0.5);
+    background-color: rgba(200, 90, 50, 0.38);
+    box-shadow: 0 0 14px rgba(200, 90, 50, 0.5);
   }
 }
 

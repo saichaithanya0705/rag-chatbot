@@ -182,32 +182,31 @@
 }
 
 .colPill {
-  padding: 5px 14px;
-  border-radius: 20px;
+  padding: 6px 14px;
+  border-radius: 8px;
   font-size: 12px;
-  border: 0.5px solid var(--border-strong);
-  background: var(--surface-muted);
-  color: var(--text-muted);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-base);
+  color: var(--text-strong);
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
-  transition:
-    transform var(--transition-fast),
-    box-shadow var(--transition-fast),
-    background var(--transition-fast);
+  box-shadow: var(--shadow-soft);
+  transition: all var(--transition-fast);
 }
 
 .colPillActive {
   background: var(--surface-accent);
   border-color: var(--accent-border);
   color: var(--accent-ink);
-  font-weight: 500;
+  font-weight: 600;
+  box-shadow: none;
 }
 
 .colPill:hover:not(.colPillActive) {
   background: var(--surface-soft);
   transform: translateY(-1px);
-  box-shadow: var(--shadow-soft);
+  box-shadow: var(--shadow-card-hover);
 }
 
 .reclusterBtn {
@@ -313,16 +312,13 @@
 }
 
 .dropZone {
-  border: 1.5px dashed var(--border-strong);
-  border-radius: 12px;
-  padding: 28px 20px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-card);
+  padding: 32px 24px;
   text-align: center;
   background: var(--surface-soft);
   cursor: pointer;
-  transition:
-    border-color 0.15s,
-    background 0.15s,
-    padding 0.2s ease;
+  transition: all var(--transition-fast);
 }
 
 .dropZoneCompact {
@@ -337,12 +333,13 @@
 .dropZoneDragOver {
   border-color: var(--accent);
   background: var(--surface-accent);
-  animation: borderPulse 1.2s infinite;
+  box-shadow: var(--shadow-soft);
 }
 
 .dropZone:hover {
   border-color: var(--accent);
   background: var(--surface-accent);
+  box-shadow: var(--shadow-soft);
 }
 
 .dropZone:hover .dropIconSvg {
@@ -402,7 +399,18 @@
 .fileRow,
 .fileCard {
   position: relative;
+  background: var(--surface-base);
+  border: 0.5px solid var(--border-soft);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-soft);
+  transition: all var(--transition-fast);
   animation: fadeSlideIn 220ms ease;
+}
+
+.fileRow:hover,
+.fileCard:hover {
+  box-shadow: var(--shadow-card-hover);
+  border-color: var(--accent-border);
 }
 
 .fileRow {
@@ -614,19 +622,35 @@
 .confirmDeleteButton,
 .cancelDeleteButton {
   min-height: 28px;
-  padding: 0 10px;
-  border-radius: 8px;
+  padding: 0 12px;
+  border-radius: 6px;
   font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
 }
 
 .confirmDeleteButton {
-  background: rgba(195, 84, 84, 0.12);
-  color: var(--danger);
+  background: var(--warning-surface);
+  color: var(--warning-ink);
+  border: 0.5px solid rgba(200, 90, 50, 0.2);
+}
+
+.confirmDeleteButton:hover {
+  background: var(--danger);
+  color: #ffffff;
+  border-color: transparent;
 }
 
 .cancelDeleteButton {
-  background: var(--surface-soft);
+  background: var(--surface-base);
   color: var(--text-muted);
+  border: 0.5px solid var(--border-soft);
+}
+
+.cancelDeleteButton:hover {
+  background: var(--surface-soft);
+  color: var(--text-strong);
 }
 
 @keyframes fadeSlideIn {

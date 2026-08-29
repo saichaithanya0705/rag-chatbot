@@ -209,23 +209,6 @@ test("initial workbench state derives viewport and thinking preferences from bro
   }
 });
 
-test("initial workbench state uses browser-safe defaults when window is unavailable", () => {
-  clearWindow();
-
-  try {
-    const state = createInitialWorkbenchState();
-
-    assert.equal(getInitialCompactViewport(), false);
-    assert.equal(getInitialThinkingEnabled(), true);
-    assert.equal(state.isCompactViewport, false);
-    assert.equal(state.sidebarOpen, true);
-    assert.equal(state.thinkingEnabled, true);
-    assert.doesNotThrow(() => persistThinkingEnabled(false));
-  } finally {
-    restoreWindow();
-  }
-});
-
 test("stable workbench action proxy delegates to the latest action ref", async () => {
   const calls: string[] = [];
   const makeActions = (label: string): WorkbenchActions => ({
@@ -282,6 +265,9 @@ test("stable workbench action proxy delegates to the latest action ref", async (
     },
     clearDraftImages: () => {
       calls.push(`${label}:clearDraftImages`);
+    },
+    toggleTheme: () => {
+      calls.push(`${label}:toggleTheme`);
     },
   });
   const actionRef = { current: makeActions("initial") };

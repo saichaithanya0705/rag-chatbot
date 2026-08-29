@@ -86,6 +86,13 @@ class IngestionService:
             existing = self._document_service.get_document_by_id(document_id, user_id=user_id)
             if existing and existing.get("pdf_name"):
                 resolved_pdf_name = str(existing["pdf_name"])
+            elif not existing:
+                self._document_service.create_pending_document(
+                    document_id=document_id,
+                    pdf_name=resolved_pdf_name,
+                    source_path=pdf_path,
+                    user_id=user_id,
+                )
 
         self._document_service.update_document_progress(
             document_id,
@@ -259,13 +266,45 @@ class IngestionService:
         chunk_metadatas: list[dict[str, object]],
     ) -> None:
         embeddings = await self._nvidia_client.embed_texts(chunk_texts)
-        self._collection().upsert(
-            ids=list(chunk_ids),
-            documents=list(chunk_texts),
-            metadatas=list(chunk_metadatas),
-            embeddings=embeddings,
+        import math
+        clean_metadatas = []
+        for meta in chunk_metadatas:
+            entry: dict[str, Any] = {}
+            for k, v in meta.items():
+                if v is None:
+                    continue
+                if isinstance(v, bool):
+                    entry[k] = int(v)
+                elif isinstance(v, int):
+                    entry[k] = v
+                elif isinstance(v, float):
+                    if math.isnan(v) or math.isinf(v):
+                        continue
+                    entry[k] = float(v)
+                elif isinstance(v, str):
+                    entry[k] = str(v)
+                else:
+                    try:
+                        entry[k] = json.dumps(v)
+                    except Exception:
+                        entry[k] = str(v)
+            clean_metadatas.append(entry)
+
+        clean_embeddings = [
+            [0.0 if math.isnan(x) or math.isinf(x) else float(x) for x in emb]
+            for emb in embeddings
+        ]
+
+        col = self._collection()
+        await asyncio.to_thread(
+            col.upsert,
+            ids=[str(cid) for cid in chunk_ids],
+            documents=[str(txt) for txt in chunk_texts],
+            metadatas=clean_metadatas,
+            embeddings=clean_embeddings,
         )
-        self._document_service.upsert_chunk_catalog_entries(
+        await asyncio.to_thread(
+            self._document_service.upsert_chunk_catalog_entries,
             [
                 RetrievalChunkCatalogEntry(
                     chunk_id=str(chunk_id),
@@ -288,7 +327,7 @@ class IngestionService:
                     chunk_metadatas,
                     strict=False,
                 )
-            ]
+            ],
         )
         chunk_ids.clear()
         chunk_texts.clear()

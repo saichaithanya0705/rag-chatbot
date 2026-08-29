@@ -15,51 +15,98 @@
   --font-heading: 'Lora', Georgia, 'Times New Roman', serif;
   --font-body: 'Source Sans 3', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
-  /* Classic Colors */
-  --bg-canvas: #f5f5f0;
-  --bg-canvas-radial: rgba(127, 119, 221, 0.12);
-  --surface-base: #ffffff;
-  --surface-muted: #f1efe8;
-  --surface-soft: #fafaf8;
-  --surface-accent: #eeedfe;
-  --border-soft: #d3d1c7;
-  --border-strong: #b4b2a9;
-  --text-strong: #2c2c2a;
-  --text-muted: #5f5e5a;
-  --text-subtle: #888780; /* deprecated - use --text-subtle-aa */
-  --text-subtle-aa: #736e64; /* WCAG AA replacement for text-subtle */
+  /* Modern Vintage / Warm Editorial Colors (Light Mode) */
+  --bg-canvas: #f5f2eb;
+  --bg-canvas-radial: rgba(200, 90, 50, 0.04);
+  --surface-base: #fdfbf7;
+  --surface-muted: #eae6db;
+  --surface-soft: #faf8f5;
+  --surface-accent: #eef3fa; /* Soft ink-blue tint */
+  --border-soft: #e4dfd3;
+  --border-strong: #c6bea9;
+  --text-strong: #2d2a26; /* Deep charcoal-brown */
+  --text-muted: #625d56;
+  --text-subtle-aa: #7f7970;
   
-  --accent: #7f77dd;
-  --accent-strong: #534ab7;
-  --accent-border: #afa9ec;
-  --accent-ink: #3c3489;
+  /* Primary Accent: Vintage Ink Blue */
+  --accent: #2b4c7e;
+  --accent-strong: #1e355b;
+  --accent-border: #8ea4c7;
+  --accent-ink: #162a4a;
   
-  --warning: #ef9f27;
-  --warning-surface: #faeeda;
-  --warning-ink: #854f0b;
+  /* Secondary Accent / Warning: Terracotta Rust */
+  --warning: #c85a32;
+  --warning-surface: #fdf0eb;
+  --warning-ink: #7a2a10;
   
-  --success: #1d9e75;
-  --success-ink: #0f6e56;
+  /* Success: Muted Sage */
+  --success: #5f7a61;
+  --success-ink: #314433;
   
-  --danger: #e24b4a;
+  /* Danger: Muted Crimson */
+  --danger: #b33a3a;
 
   /* New Surfaces */
-  --surface-overlay: rgba(44, 44, 42, 0.32);
-  --surface-gradient-warm: linear-gradient(175deg, #f7f6f1 0%, #eeedde 100%);
+  --surface-overlay: rgba(45, 42, 38, 0.32);
+  --surface-gradient-warm: linear-gradient(175deg, #fdfbf7 0%, #f5f2eb 100%);
 
-  /* Shadows */
-  --shadow-soft: 0 1px 3px rgba(44, 42, 30, 0.06), 0 1px 2px rgba(44, 42, 30, 0.04);
-  --shadow-card-hover: 0 6px 16px rgba(44, 42, 30, 0.08), 0 2px 6px rgba(44, 42, 30, 0.04);
-  --shadow-floating: 0 8px 24px rgba(44, 42, 30, 0.10), 0 2px 8px rgba(44, 42, 30, 0.06);
+  /* Shadows (Paper-like soft shadows) */
+  --shadow-soft: 0 1px 3px rgba(45, 42, 38, 0.05), 0 1px 2px rgba(45, 42, 38, 0.03);
+  --shadow-card-hover: 0 6px 16px rgba(45, 42, 38, 0.07), 0 2px 6px rgba(45, 42, 38, 0.03);
+  --shadow-floating: 0 8px 24px rgba(45, 42, 38, 0.08), 0 2px 8px rgba(45, 42, 38, 0.04);
 
   /* Geometry & Motion */
-  --radius-shell: 12px;
-  --radius-card: 8px;
+  --radius-shell: 16px;
+  --radius-card: 12px;
   --radius-pill: 999px;
-  --radius-input: 12px;
-  --transition-fast: 180ms ease;
-  --transition-medium: 260ms ease;
-  --transition-slow: 400ms ease;
-  --transition-spring: 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
-  --max-shell-width: 1100px;
+  --radius-input: 14px;
+  --transition-fast: 150ms ease;
+  --transition-medium: 240ms ease;
+  --transition-slow: 350ms ease;
+  --transition-spring: 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  --max-shell-width: 1150px;
 }
+
+/* Warm Dark Mode (Kindle-like warm dark theme) */
+[data-theme="dark"] {
+  color-scheme: dark;
+  
+  --bg-canvas: #151312;
+  --bg-canvas-radial: rgba(200, 90, 50, 0.02);
+  --surface-base: #1f1c1a;
+  --surface-muted: #2d2926;
+  --surface-soft: #24201e;
+  --surface-accent: #1e2633; /* Soft dark-blue tint */
+  --border-soft: #383330;
+  --border-strong: #4d4642;
+  --text-strong: #f4f0ec; /* Warm off-white */
+  --text-muted: #bab3ab;
+  --text-subtle-aa: #958e85;
+  
+  /* Primary Accent: Lighter Vintage Blue for Dark Mode contrast */
+  --accent: #6b8cbd;
+  --accent-strong: #8fb1e2;
+  --accent-border: #4a5c78;
+  --accent-ink: #eef3fa;
+  
+  /* Secondary Accent / Warning: Terracotta */
+  --warning: #d9744b;
+  --warning-surface: #38241c;
+  --warning-ink: #fdf0eb;
+  
+  /* Success: Sage Green */
+  --success: #7da180;
+  --success-ink: #e8f5e9;
+  
+  /* Danger: Muted Crimson */
+  --danger: #d9534f;
+
+  --surface-overlay: rgba(0, 0, 0, 0.6);
+  --surface-gradient-warm: linear-gradient(175deg, #1f1c1a 0%, #151312 100%);
+
+  /* Shadows for Dark Mode (darker and softer) */
+  --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-card-hover: 0 6px 16px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.2);
+  --shadow-floating: 0 8px 24px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+

@@ -16,10 +16,17 @@ if TYPE_CHECKING:
 LOGGER = logging.getLogger(__name__)
 
 
-def _load_sentence_transformer(model_name: str):
-    from sentence_transformers import SentenceTransformer
+def _load_local_embedding_model(model_name: str) -> Any:
+    os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+    try:
+        from fastembed import TextEmbedding
 
-    return SentenceTransformer(model_name, device="cpu")
+        return TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
+    except Exception as error:
+        LOGGER.warning("FastEmbed loading failed (%s), falling back to sentence_transformers.", error)
+        from sentence_transformers import SentenceTransformer
+
+        return SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", device="cpu")
 
 
 @dataclass(frozen=True)
@@ -83,7 +90,11 @@ class NvidiaClient:
         input_type: Literal["query", "passage"] = "passage",
         timeout: float | None = None,
     ) -> list[list[float]]:
-        if self._nvidia_api_key:
+        is_cloud_model = any(
+            self._embed_model.lower().startswith(prefix)
+            for prefix in ("nvidia/", "snowflake/", "baai/", "nv-")
+        )
+        if self._nvidia_api_key and is_cloud_model:
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self._nvidia_api_key}",
@@ -141,21 +152,28 @@ class NvidiaClient:
 
         loop = asyncio.get_running_loop()
         local_model = self._get_local_model()
-        embeddings_nd = await loop.run_in_executor(
-            None,
-            lambda: local_model.encode(texts, convert_to_numpy=True)
-        )
-        embeddings = embeddings_nd.tolist()
+        if hasattr(local_model, "embed"):
+            embeddings_gen = await loop.run_in_executor(
+                None,
+                lambda: [emb.tolist() for emb in local_model.embed(texts)],
+            )
+            embeddings = embeddings_gen
+        else:
+            embeddings_nd = await loop.run_in_executor(
+                None,
+                lambda: local_model.encode(texts, convert_to_numpy=True),
+            )
+            embeddings = embeddings_nd.tolist()
         self._validate_embedding_dimensions(embeddings)
         return embeddings
 
-    def _get_local_model(self) -> SentenceTransformer:
+    def _get_local_model(self) -> Any:
         if self._embed_model_local is None:
             model_name = self._embed_model
             if "nvidia" in model_name.lower():
                 model_name = "sentence-transformers/all-MiniLM-L6-v2"
-            LOGGER.info("Lazy loading fallback local SentenceTransformer model: %s", model_name)
-            self._embed_model_local = _load_sentence_transformer(model_name)
+            LOGGER.info("Lazy loading local embedding model: %s", model_name)
+            self._embed_model_local = _load_local_embedding_model(model_name)
         return self._embed_model_local
 
     def _validate_embedding_dimensions(self, embeddings: list[list[float]]) -> None:

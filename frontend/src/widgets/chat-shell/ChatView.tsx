@@ -18,9 +18,11 @@ export function ChatView({ active }: ChatViewProps) {
   const { state, actions } = useWorkbench();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [focusedOptionIndex, setFocusedOptionIndex] = useState(0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const settingsRef = useRef<HTMLDivElement>(null);
 
   const collectionOptions =
     state.collections.length > 0 ? state.collections : [{ id: "all-pdfs", label: "All PDFs" }];
@@ -67,6 +69,9 @@ export function ChatView({ active }: ChatViewProps) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setDropdownOpen(false);
         setFocusedOptionIndex(activeCollectionIndex);
+      }
+      if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) {
+        setSettingsOpen(false);
       }
     }
 
@@ -305,62 +310,90 @@ export function ChatView({ active }: ChatViewProps) {
           ) : null}
         </div>
         <div className={styles.topbarSpacer} />
-        <div className={styles.toggleCluster}>
-          <div className={styles.webToggleWrap}>
-            <button
-              aria-label={state.webSearchEnabled ? "Turn web search off" : "Turn web search on"}
-              aria-pressed={state.webSearchEnabled}
-              className={cn(styles.toggleTrack, state.webSearchEnabled && styles.toggleTrackOn)}
-              disabled={isScopeLocked}
-              onClick={actions.toggleWebSearch}
-              type="button"
-            >
-              <div className={styles.toggleKnob} />
-            </button>
-            <span className={styles.webToggleLabel}>Web search</span>
-            <span
-              className={cn(
-                styles.offlineBadge,
-                state.webSearchEnabled && state.webSearchOffline && styles.offlineBadgeShow,
-              )}
-            >
-              Search offline. PDF answers still work.
-            </span>
-          </div>
-          <div
-            className={styles.webToggleWrap}
-            style={{ opacity: state.thinkingSupported ? 1 : 0.5 }}
-            title={state.thinkingSupported ? undefined : "The currently configured model does not support reasoning"}
+        <div className={styles.settingsDropdownRef} ref={settingsRef}>
+          <button
+            aria-expanded={settingsOpen}
+            aria-haspopup="true"
+            aria-label="Chat settings"
+            className={cn(styles.settingsBtn, settingsOpen && styles.settingsBtnActive)}
+            onClick={() => setSettingsOpen(!settingsOpen)}
+            type="button"
           >
-            <button
-              aria-label={
-                state.thinkingEnabled ? "Turn model thinking off" : "Turn model thinking on"
-              }
-              aria-pressed={state.thinkingEnabled}
-              className={cn(styles.toggleTrack, state.thinkingEnabled && styles.toggleTrackOn)}
-              disabled={isScopeLocked || !state.thinkingSupported}
-              onClick={actions.toggleThinking}
-              type="button"
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             >
-              <div className={styles.toggleKnob} />
-            </button>
-            <span className={styles.webToggleLabel}>Model thinking</span>
-          </div>
-          <div className={styles.webToggleWrap}>
-            <button
-              aria-label={
-                state.detailedAnswerEnabled ? "Turn detailed answers off" : "Turn detailed answers on"
-              }
-              aria-pressed={state.detailedAnswerEnabled}
-              className={cn(styles.toggleTrack, state.detailedAnswerEnabled && styles.toggleTrackOn)}
-              disabled={isScopeLocked}
-              onClick={actions.toggleDetailedAnswer}
-              type="button"
-            >
-              <div className={styles.toggleKnob} />
-            </button>
-            <span className={styles.webToggleLabel}>Detailed answers</span>
-          </div>
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
+
+          {settingsOpen && (
+            <div className={styles.settingsMenu}>
+              <h3 className={styles.settingsMenuTitle}>Chat settings</h3>
+              
+              <div className={styles.settingsRow}>
+                <div className={styles.settingsLabelBlock}>
+                  <span className={styles.settingsLabel}>Web search</span>
+                  <span className={styles.settingsDesc}>Include live web evidence when local PDFs are not enough.</span>
+                </div>
+                <button
+                  aria-label={state.webSearchEnabled ? "Turn web search off" : "Turn web search on"}
+                  aria-pressed={state.webSearchEnabled}
+                  className={cn(styles.toggleTrack, state.webSearchEnabled && styles.toggleTrackOn)}
+                  disabled={isScopeLocked}
+                  onClick={actions.toggleWebSearch}
+                  type="button"
+                >
+                  <div className={styles.toggleKnob} />
+                </button>
+              </div>
+
+              <div className={styles.settingsRow} style={{ opacity: state.thinkingSupported ? 1 : 0.5 }}>
+                <div className={styles.settingsLabelBlock}>
+                  <span className={styles.settingsLabel}>Model thinking</span>
+                  <span className={styles.settingsDesc}>
+                    {state.thinkingSupported 
+                      ? "Show the step-by-step reasoning process." 
+                      : "Reasoning is not supported by the active model."}
+                  </span>
+                </div>
+                <button
+                  aria-label={state.thinkingEnabled ? "Turn thinking off" : "Turn thinking on"}
+                  aria-pressed={state.thinkingEnabled}
+                  className={cn(styles.toggleTrack, state.thinkingEnabled && styles.toggleTrackOn)}
+                  disabled={isScopeLocked || !state.thinkingSupported}
+                  onClick={actions.toggleThinking}
+                  type="button"
+                >
+                  <div className={styles.toggleKnob} />
+                </button>
+              </div>
+
+              <div className={styles.settingsRow}>
+                <div className={styles.settingsLabelBlock}>
+                  <span className={styles.settingsLabel}>Detailed answers</span>
+                  <span className={styles.settingsDesc}>Synthesize longer, more comprehensive explanations.</span>
+                </div>
+                <button
+                  aria-label={state.detailedAnswerEnabled ? "Turn detailed answers off" : "Turn detailed answers on"}
+                  aria-pressed={state.detailedAnswerEnabled}
+                  className={cn(styles.toggleTrack, state.detailedAnswerEnabled && styles.toggleTrackOn)}
+                  disabled={isScopeLocked}
+                  onClick={actions.toggleDetailedAnswer}
+                  type="button"
+                >
+                  <div className={styles.toggleKnob} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
         <button
           aria-label="Open the PDF pipeline"

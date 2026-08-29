@@ -12,7 +12,6 @@ from typing import Any
 from uuid import uuid4
 
 import numpy as np
-from sklearn.cluster import AgglomerativeClustering, HDBSCAN
 
 from app.core.chroma_store import ChromaStore
 from app.core.database import Database
