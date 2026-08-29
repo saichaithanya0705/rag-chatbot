@@ -6,18 +6,32 @@ import chromadb
 from chromadb.api.types import Documents, Embeddings
 
 
-class PassthroughEmbeddingFunction(chromadb.EmbeddingFunction[Documents]):
+class ExplicitEmbeddingFunction(chromadb.EmbeddingFunction[Documents]):
     def __init__(self) -> None:
         pass
 
     def __call__(self, input: Documents) -> Embeddings:
-        return []
+        raise RuntimeError(
+            "This application requires callers to provide explicit embeddings for every Chroma operation."
+        )
+
+    @staticmethod
+    def name() -> str:
+        return "rag-explicit-embeddings"
+
+    @staticmethod
+    def build_from_config(config: dict[str, Any]) -> "ExplicitEmbeddingFunction":
+        del config
+        return ExplicitEmbeddingFunction()
+
+    def get_config(self) -> dict[str, Any]:
+        return {}
 
 
 class ChromaStore:
     def __init__(self, chroma_path: str) -> None:
         self._chroma_path = chroma_path
-        self._embedding_function = PassthroughEmbeddingFunction()
+        self._embedding_function = ExplicitEmbeddingFunction()
         self._collections: dict[str, Any] = {}
         self._client = chromadb.PersistentClient(path=self._chroma_path)
 
@@ -47,17 +61,11 @@ class ChromaStore:
 
     def delete_collection(self, name: str) -> None:
         self._collections.pop(name, None)
-        try:
-            self._client.delete_collection(name=name)
-        except Exception:
-            pass
+        self._client.delete_collection(name=name)
         self._client = chromadb.PersistentClient(path=self._chroma_path)
 
     def reset(self) -> None:
         self._collections.clear()
         for collection_name in self.list_collection_names():
-            try:
-                self._client.delete_collection(collection_name)
-            except Exception:
-                pass
+            self._client.delete_collection(collection_name)
         self._client = chromadb.PersistentClient(path=self._chroma_path)

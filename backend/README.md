@@ -1,6 +1,6 @@
 # Local RAG Chat Backend
 
-Backend for the local RAG chatbot. PDF ingestion uses IBM Docling for document parsing, OCR, table reconstruction, and source-block metadata.
+Backend for the local RAG chatbot. PDF ingestion uses OpenDataLoader core for digital text, layout, list/table reconstruction, and source-block metadata. This small runtime intentionally does not include OCR.
 
 ## Setup
 
@@ -34,22 +34,22 @@ cd D:\projects\chat\backend
 .venv\Scripts\python scripts\ingest_pdf.py "D:\path\to\notes.pdf"
 ```
 
-On first PDF ingestion, Docling downloads its layout/table/OCR artifacts into `data/docling-models` unless `RAG_DOCLING_ARTIFACTS_DIR` points somewhere else. Keep that directory writable, especially on Windows.
+OpenDataLoader requires Java 17 on `PATH`. Image-only PDFs fail with an explicit OCR-required message; add a separately deployed hybrid OCR service if scanned-document support becomes a requirement.
 
-## Verify Ollama models
+## Verify models
 
-The backend defaults are configured for the models currently installed on this machine:
+The backend defaults are:
 
-- Embedding model: `all-minilm` (384-dimensional embeddings)
-- Chat model: `gemma4:31b-cloud`
+- Local embedding model: `BAAI/bge-small-en-v1.5` through FastEmbed (384 dimensions)
+- Chat model: `meta/llama-3.2-11b-vision-instruct` through NVIDIA NIM
 
 You can override them with environment variables:
 
-- `RAG_OLLAMA_BASE_URL`
-- `RAG_OLLAMA_EMBED_MODEL`
+- `RAG_NVIDIA_BASE_URL`
+- `RAG_NVIDIA_API_KEY`
+- `RAG_EMBED_MODEL`
 - `RAG_EMBEDDING_DIMENSIONS`
-- `RAG_OLLAMA_CHAT_MODEL`
-- `RAG_DOCLING_ARTIFACTS_DIR`
-- `RAG_DOCLING_OCR`
-- `RAG_DOCLING_TABLE_STRUCTURE`
+- `RAG_NVIDIA_CHAT_MODEL`
+- `RAG_RERANKER_MODEL`
+- `RAG_DATA_DIR`
 - `RAG_ALLOWED_ORIGINS`

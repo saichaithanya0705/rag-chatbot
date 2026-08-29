@@ -49,7 +49,7 @@ def pdf_context_from_chunk(chunk: RetrievedChunk) -> RetrievedContext:
     )
 
 
-def docling_source_metadata_from_metadata(metadata: dict[str, object]) -> dict[str, object]:
+def source_metadata_from_metadata(metadata: dict[str, object]) -> dict[str, object]:
     labels = tuple(json_string_list(metadata.get("content_labels")))
     source_refs = tuple(json_string_list(metadata.get("source_refs")))
     source_blocks = tuple(json_dict_list(metadata.get("source_blocks")))

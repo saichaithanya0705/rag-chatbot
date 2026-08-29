@@ -1,4 +1,5 @@
 __pycache__/
+.pytest_cache/
 *.pyc
 *.pyo
 .env
@@ -10,6 +11,7 @@ data/
 .gitignore
 .vscode/
 *.md
+tests/
 test_*.py
 inspect_*.py
 reproduce_*.py

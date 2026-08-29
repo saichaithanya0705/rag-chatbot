@@ -292,47 +292,6 @@ class RagService:
             raise last_error
         raise RuntimeError("Answer generation ended without a result.")
 
-    def _parse_images_ocr(self, images: list[ChatImage] | None) -> str:
-        if not images:
-            return ""
-        
-        extracted_texts = []
-        import tempfile
-        import base64
-        try:
-            from docling.document_converter import DocumentConverter
-            
-            converter = DocumentConverter()
-            for idx, img in enumerate(images):
-                try:
-                    img_data = base64.b64decode(img.data)
-                    ext = ".png"
-                    if "jpeg" in img.mime_type or "jpg" in img.mime_type:
-                        ext = ".jpg"
-                    
-                    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp_file:
-                        tmp_file.write(img_data)
-                        tmp_path = tmp_file.name
-                    
-                    try:
-                        result = converter.convert(tmp_path)
-                        text = result.document.export_to_markdown()
-                        if text.strip():
-                            extracted_texts.append(f"Image {idx+1} (OCR Content):\n{text.strip()}")
-                    finally:
-                        import os
-                        if os.path.exists(tmp_path):
-                            os.remove(tmp_path)
-                except Exception as e:
-                    LOGGER.warning("Failed to run OCR on image %d: %s", idx, e, exc_info=True)
-        except Exception as e:
-            LOGGER.warning("Failed to initialize Docling for image OCR: %s", e, exc_info=True)
-            
-        if not extracted_texts:
-            return ""
-            
-        return "\n\n---\n\n".join(extracted_texts)
-
     async def prepare_answer(
         self,
         question: str,
@@ -346,10 +305,6 @@ class RagService:
         images: list[ChatImage] | None = None,
         user_id: str,
     ) -> PreparedAnswer:
-        ocr_text = self._parse_images_ocr(images)
-        if ocr_text:
-            question = f"{question}\n\n[Parsed Image OCR Content:\n{ocr_text}]"
-
         message_intent = await classify_message_intent(
             question,
             nvidia_client=self._nvidia_client,
@@ -396,7 +351,7 @@ class RagService:
                 prompt = f"Please analyze the attached image and answer the user query: {question}"
                 system_prompt = (
                     "You are a helpful assistant with vision capabilities. "
-                    "Analyze the attached images and the parsed OCR text, and answer the user's question accurately."
+                    "Analyze the attached images directly and answer the user's question accurately."
                 )
                 return PreparedAnswer(
                     question=question,

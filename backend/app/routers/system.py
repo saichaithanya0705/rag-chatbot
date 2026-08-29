@@ -29,6 +29,7 @@ def _build_health_response(
     indexed_chunks: int,
     ingestion_mode: str,
     parser_available: bool,
+    ocr_enabled: bool,
     ocr_available: bool,
 ) -> HealthResponse:
     return HealthResponse(
@@ -41,7 +42,7 @@ def _build_health_response(
         indexed_chunks=indexed_chunks,
         ingestionMode=ingestion_mode,
         parserAvailable=parser_available,
-        ocrEnabled=settings.docling_ocr_enabled,
+        ocrEnabled=ocr_enabled,
         ocrAvailable=ocr_available,
         thinkingSupported=_thinking_supported(settings.chat_model),
     )
@@ -69,19 +70,19 @@ def health(request: Request) -> HealthResponse:
             indexed_chunks=0,
             ingestion_mode="starting",
             parser_available=False,
+            ocr_enabled=False,
             ocr_available=False,
         )
 
+    ocr_enabled = container.document_parser.ocr_enabled
     return _build_health_response(
         settings=container.settings,
         status_value="ok",
         indexed_chunks=container.document_service.count_indexed_chunks_all(),
         ingestion_mode=container.ingestion_dispatcher.mode,
         parser_available=container.document_parser.is_available(),
-        ocr_available=(
-            container.settings.docling_ocr_enabled
-            and container.document_parser.ocr_pipeline_available()
-        ),
+        ocr_enabled=ocr_enabled,
+        ocr_available=ocr_enabled and container.document_parser.ocr_pipeline_available(),
     )
 
 

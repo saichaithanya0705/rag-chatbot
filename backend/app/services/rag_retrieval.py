@@ -18,7 +18,7 @@ from app.services.rag_answer_text import (
     tokenize,
 )
 from app.services.rag_citations import (
-    docling_source_metadata_from_metadata,
+    source_metadata_from_metadata,
     pdf_context_from_chunk,
     retrieved_chunk_from_candidate,
 )
@@ -526,7 +526,7 @@ class RagRetrievalEngine:
                 page_number=row.page_number,
                 chunk_index=row.chunk_index,
                 text=row.text,
-                **docling_source_metadata_from_metadata(
+                **source_metadata_from_metadata(
                     metadata_by_chunk_id.get(row.chunk_id, {})
                 ),
             )
@@ -686,7 +686,7 @@ class RagRetrievalEngine:
                     chunk_index=int(metadata["chunk_index"]),
                     text=str(text),
                     fused_score=rrf_score(rank),
-                    **docling_source_metadata_from_metadata(dict(metadata or {})),
+                    **source_metadata_from_metadata(dict(metadata or {})),
                 )
             )
         return candidates

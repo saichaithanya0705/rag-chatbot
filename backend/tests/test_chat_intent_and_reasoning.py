@@ -378,7 +378,7 @@ class ChatIntentAndReasoningTests(unittest.TestCase):
         self.assertEqual([citation.id for citation in citations], ["c1"])
         self.assertNotIn("Internal prompt", answer)
 
-    def test_docling_source_metadata_flows_into_pdf_citation(self) -> None:
+    def test_parser_source_metadata_flows_into_pdf_citation(self) -> None:
         context = pdf_context_from_chunk(
             RetrievedChunk(
                 chunk_id="doc-1:1:0",
@@ -388,7 +388,7 @@ class ChatIntentAndReasoningTests(unittest.TestCase):
                 page_number=1,
                 chunk_index=0,
                 text="Synthetic semantic chunk about a scheduling table.",
-                parser="docling",
+                parser="opendataloader_pdf",
                 content_labels=("section_header", "table"),
                 source_text="| Algorithm | Behavior |\n| Round Robin | Cycles through ready queue |",
                 source_refs=("#/tables/0",),
@@ -406,7 +406,7 @@ class ChatIntentAndReasoningTests(unittest.TestCase):
 
         citation = citation_from_context(context).model_dump(by_alias=True)
 
-        self.assertEqual(citation["parser"], "docling")
+        self.assertEqual(citation["parser"], "opendataloader_pdf")
         self.assertEqual(citation["sourceLabels"], ["section_header", "table"])
         self.assertEqual(citation["sourceRefs"], ["#/tables/0"])
         self.assertEqual(citation["sourceText"], "| Algorithm | Behavior |\n| Round Robin | Cycles through ready queue |")

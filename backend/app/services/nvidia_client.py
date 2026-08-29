@@ -6,27 +6,70 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 import httpx
-
-if TYPE_CHECKING:
-    from sentence_transformers import SentenceTransformer
 
 LOGGER = logging.getLogger(__name__)
 
 
+LOCAL_EMBEDDING_MODEL_ALIASES = {
+    "all-minilm-l6-v2": "sentence-transformers/all-MiniLM-L6-v2",
+    "all-minilm": "sentence-transformers/all-MiniLM-L6-v2",
+}
+CLOUD_EMBEDDING_PREFIXES = ("nvidia/", "snowflake/", "baai/", "nv-")
+DEFAULT_LOCAL_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
+DEFAULT_LOCAL_EMBEDDING_DIMENSIONS = 384
+
+
+@dataclass(frozen=True)
+class EmbeddingRuntime:
+    model: str
+    dimensions: int | None
+    uses_cloud: bool
+
+
+def resolve_embedding_runtime(
+    model_name: str,
+    *,
+    configured_dimensions: int | None,
+    use_cloud: bool,
+) -> EmbeddingRuntime:
+    normalized = model_name.strip()
+    is_cloud_model = normalized.lower().startswith(CLOUD_EMBEDDING_PREFIXES)
+    if is_cloud_model and use_cloud:
+        return EmbeddingRuntime(
+            model=normalized,
+            dimensions=configured_dimensions,
+            uses_cloud=True,
+        )
+    if is_cloud_model:
+        return EmbeddingRuntime(
+            model=DEFAULT_LOCAL_EMBEDDING_MODEL,
+            dimensions=DEFAULT_LOCAL_EMBEDDING_DIMENSIONS,
+            uses_cloud=False,
+        )
+    return EmbeddingRuntime(
+        model=LOCAL_EMBEDDING_MODEL_ALIASES.get(normalized.lower(), normalized),
+        dimensions=configured_dimensions,
+        uses_cloud=False,
+    )
+
+
+def resolve_embedding_model_id(model_name: str, *, use_cloud: bool) -> str:
+    """Return only the resolved model for backwards-compatible callers."""
+    return resolve_embedding_runtime(
+        model_name,
+        configured_dimensions=None,
+        use_cloud=use_cloud,
+    ).model
+
+
 def _load_local_embedding_model(model_name: str) -> Any:
     os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
-    try:
-        from fastembed import TextEmbedding
+    from fastembed import TextEmbedding
 
-        return TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
-    except Exception as error:
-        LOGGER.warning("FastEmbed loading failed (%s), falling back to sentence_transformers.", error)
-        from sentence_transformers import SentenceTransformer
-
-        return SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", device="cpu")
+    return TextEmbedding(model_name=model_name)
 
 
 @dataclass(frozen=True)
@@ -58,19 +101,23 @@ class NvidiaClient:
         max_stream_concurrency: int = 4,
     ) -> None:
         self._base_url = base_url.rstrip("/")
-        self._embed_model = embed_model
+        self._embed_model = embed_model.strip()
         self._chat_model = chat_model
         self._nvidia_base_url = nvidia_base_url.rstrip("/")
         self._nvidia_api_key = nvidia_api_key or os.getenv("RAG_NVIDIA_API_KEY") or os.getenv("NVIDIA_API_KEY", "")
-        self._expected_embedding_dimensions = expected_embedding_dimensions
+        self._embedding_runtime = resolve_embedding_runtime(
+            self._embed_model,
+            configured_dimensions=expected_embedding_dimensions,
+            use_cloud=bool(self._nvidia_api_key),
+        )
+        self._resolved_embed_model = self._embedding_runtime.model
+        self._expected_embedding_dimensions = self._embedding_runtime.dimensions
 
         self._embed_model_local = None
         if not self._nvidia_api_key:
-            LOGGER.info(
-                "NVIDIA NIM API key missing. Local SentenceTransformer fallback will load on first embedding request."
-            )
+            LOGGER.info("NVIDIA NIM API key missing. Local FastEmbed model will load on first embedding request.")
         else:
-            LOGGER.info("NVIDIA NIM API key provided. Skipping local SentenceTransformer loading.")
+            LOGGER.info("NVIDIA NIM API key provided. Skipping local FastEmbed loading.")
 
         self._generate_client = httpx.AsyncClient(
             base_url=self._nvidia_base_url,
@@ -90,11 +137,10 @@ class NvidiaClient:
         input_type: Literal["query", "passage"] = "passage",
         timeout: float | None = None,
     ) -> list[list[float]]:
-        is_cloud_model = any(
-            self._embed_model.lower().startswith(prefix)
-            for prefix in ("nvidia/", "snowflake/", "baai/", "nv-")
-        )
-        if self._nvidia_api_key and is_cloud_model:
+        if not texts:
+            return []
+
+        if self._embedding_runtime.uses_cloud:
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self._nvidia_api_key}",
@@ -123,10 +169,10 @@ class NvidiaClient:
                         response.raise_for_status()
                         res_data = response.json()
                     
-                    embeddings = [item["embedding"] for item in res_data["data"]]
+                    embeddings = _parse_cloud_embeddings(res_data, expected_count=len(texts))
                     self._validate_embedding_dimensions(embeddings)
                     return embeddings
-                except Exception as error:
+                except httpx.HTTPError as error:
                     last_error = error
                     LOGGER.warning(
                         "NVIDIA NIM cloud embedding attempt %d/%d failed: %s",
@@ -138,17 +184,10 @@ class NvidiaClient:
                         await asyncio.sleep(retry_delay)
                         retry_delay *= 2  # Exponential backoff
             
-            is_fallback_feasible = (
-                self._expected_embedding_dimensions is None 
-                or self._expected_embedding_dimensions == 384
-            )
-            if not is_fallback_feasible:
-                LOGGER.error("NVIDIA NIM cloud embedding failed after %d retries. Fallback is not feasible due to dimension mismatch (expected 1024, fallback provides 384). Raising error.", max_retries)
-                if last_error:
-                    raise last_error
-                raise RuntimeError("NVIDIA NIM cloud embedding failed and fallback was unfeasible.")
-                
-            LOGGER.warning("NVIDIA NIM cloud embedding failed after all retries; falling back to local SentenceTransformers.")
+            raise RuntimeError(
+                "NVIDIA NIM cloud embedding failed after all retries; refusing to mix a different "
+                "local embedding model into the existing index."
+            ) from last_error
 
         loop = asyncio.get_running_loop()
         local_model = self._get_local_model()
@@ -169,11 +208,8 @@ class NvidiaClient:
 
     def _get_local_model(self) -> Any:
         if self._embed_model_local is None:
-            model_name = self._embed_model
-            if "nvidia" in model_name.lower():
-                model_name = "sentence-transformers/all-MiniLM-L6-v2"
-            LOGGER.info("Lazy loading local embedding model: %s", model_name)
-            self._embed_model_local = _load_local_embedding_model(model_name)
+            LOGGER.info("Lazy loading local embedding model: %s", self._resolved_embed_model)
+            self._embed_model_local = _load_local_embedding_model(self._resolved_embed_model)
         return self._embed_model_local
 
     def _validate_embedding_dimensions(self, embeddings: list[list[float]]) -> None:
@@ -253,6 +289,7 @@ class NvidiaClient:
                 headers=headers,
                 timeout=request_timeout,
             )
+
             response.raise_for_status()
             res_data = response.json()
 
@@ -346,9 +383,32 @@ class NvidiaClient:
                             content = delta.get("content", "")
                             if content:
                                 yield NvidiaStreamDelta(kind="response", content=content)
-                        except Exception:
+                        except (AttributeError, IndexError, TypeError, ValueError) as error:
+                            LOGGER.warning("Malformed NVIDIA stream event skipped: %s", error)
                             continue
 
     async def aclose(self) -> None:
         await self._generate_client.aclose()
         await self._stream_client.aclose()
+
+
+def _parse_cloud_embeddings(payload: Any, *, expected_count: int) -> list[list[float]]:
+    if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
+        raise ValueError("NVIDIA embedding response must contain a data list.")
+
+    rows = payload["data"]
+    if len(rows) != expected_count:
+        raise ValueError(
+            "NVIDIA embedding response returned "
+            f"{len(rows)} vectors for {expected_count} inputs."
+        )
+
+    embeddings: list[list[float]] = []
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict) or not isinstance(row.get("embedding"), list):
+            raise ValueError(f"NVIDIA embedding response item {index} must contain an embedding list.")
+        try:
+            embeddings.append([float(value) for value in row["embedding"]])
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"NVIDIA embedding response item {index} contains a non-numeric value.") from error
+    return embeddings

@@ -4,7 +4,7 @@ import unittest
 
 from app.services.rag_citations import (
     citation_from_context,
-    docling_source_metadata_from_metadata,
+    source_metadata_from_metadata,
     pdf_context_from_chunk,
     retrieved_chunk_from_candidate,
 )
@@ -13,9 +13,9 @@ from app.services.rag_types import CandidateChunk, RetrievedContext
 
 class RagCitationMappingTests(unittest.TestCase):
     def test_candidate_metadata_chain_preserves_pdf_citation_contract(self) -> None:
-        source_metadata = docling_source_metadata_from_metadata(
+        source_metadata = source_metadata_from_metadata(
             {
-                "parser": " docling ",
+                "parser": " opendataloader_pdf ",
                 "content_labels": '["section_header", "table", "paragraph", ""]',
                 "source_text": "| Algorithm | Behavior |\n| Round Robin | Cycles through ready queue |",
                 "source_refs": '["#/texts/0", "#/tables/0"]',
@@ -41,7 +41,7 @@ class RagCitationMappingTests(unittest.TestCase):
         citation = citation_from_context(context).model_dump(by_alias=True)
 
         self.assertFalse(hasattr(chunk, "rerank_score"))
-        self.assertEqual(citation["parser"], "docling")
+        self.assertEqual(citation["parser"], "opendataloader_pdf")
         self.assertEqual(citation["sourceLabels"], ["section_header", "table", "paragraph"])
         self.assertEqual(citation["sourceRefs"], ["#/texts/0", "#/tables/0"])
         self.assertEqual(citation["sourceLocation"], "section header + table")

@@ -20,7 +20,7 @@ class _FakeCollection:
                 "is_indexed": 1,
             },
             "qa-c1": {
-                "parser": "docling",
+                "parser": "opendataloader_pdf",
                 "content_labels": '["paragraph"]',
             },
         }

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from app.core.chroma_store import ChromaStore
 from app.core.config import Settings
 from app.core.database import Database
-from app.services.docling_parser import DoclingDocumentParser
+from app.services.opendataloader_parser import OpenDataLoaderDocumentParser
 from app.services.chat_rate_limiter import ChatRateLimiter
 from app.services.document_preview_service import DocumentPreviewService
 from app.services.document_service import DocumentService
@@ -15,7 +15,7 @@ from app.services.ingestion_dispatcher import IngestionDispatcher
 from app.services.ingestion_service import IngestionService
 from app.services.kg_manager import KgManager
 from app.services.keyword_service import KeywordService
-from app.services.nvidia_client import NvidiaClient
+from app.services.nvidia_client import NvidiaClient, resolve_embedding_runtime
 from app.services.query_rewrite_service import QueryRewriteService
 from app.services.rag_service import RagService
 from app.services.reranker_service import RerankerService
@@ -36,7 +36,7 @@ class ServiceContainer:
     history_service: HistoryService
     kg_manager: KgManager
     topic_index_service: TopicIndexService
-    document_parser: DoclingDocumentParser
+    document_parser: OpenDataLoaderDocumentParser
     ingestion_dispatcher: IngestionDispatcher
     query_rewrite_service: QueryRewriteService
     reranker_service: RerankerService
@@ -56,12 +56,17 @@ def build_container(settings: Settings) -> ServiceContainer:
     database.initialize()
 
     chroma_store = ChromaStore(str(settings.chroma_path))
+    embedding_runtime = resolve_embedding_runtime(
+        settings.embed_model,
+        configured_dimensions=settings.embedding_dimensions,
+        use_cloud=bool(settings.nvidia_api_key),
+    )
     EmbeddingIndexService(
         database=database,
         chroma_store=chroma_store,
         kg_path=settings.kg_path,
-        model=settings.embed_model,
-        dimensions=settings.embedding_dimensions,
+        model=embedding_runtime.model,
+        dimensions=embedding_runtime.dimensions,
     ).reconcile()
     nvidia_client = NvidiaClient(
         base_url=settings.nvidia_base_url,
@@ -69,7 +74,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         chat_model=settings.chat_model,
         nvidia_base_url=settings.nvidia_base_url,
         nvidia_api_key=settings.nvidia_api_key,
-        expected_embedding_dimensions=settings.embedding_dimensions,
+        expected_embedding_dimensions=embedding_runtime.dimensions,
     )
     document_service = DocumentService(database=database, chroma_store=chroma_store)
     document_preview_service = DocumentPreviewService(document_service)
@@ -86,11 +91,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         kg_manager=kg_manager,
         topic_collection_prefix=settings.topic_collection_prefix,
     )
-    document_parser = DoclingDocumentParser(
-        ocr_enabled=settings.docling_ocr_enabled,
-        table_structure_enabled=settings.docling_table_structure_enabled,
-        artifacts_path=settings.docling_artifacts_dir,
-    )
+    document_parser = OpenDataLoaderDocumentParser()
     ingestion_dispatcher = IngestionDispatcher(settings=settings)
     reranker_service = RerankerService(
         settings.reranker_model,

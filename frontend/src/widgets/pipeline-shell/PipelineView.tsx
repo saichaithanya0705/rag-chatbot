@@ -28,11 +28,11 @@ function statusLabel(status: PipelineStatus) {
   }
 
   if (status === "parsing") {
-    return "Docling parsing…";
+    return "OpenDataLoader parsing…";
   }
 
   if (status === "ocr") {
-    return "Docling OCR…";
+    return "Analyzing document…";
   }
 
   if (status === "chunking") {
@@ -472,7 +472,7 @@ export function PipelineView({ active }: PipelineViewProps) {
               <div className={styles.dropTitle}>
                 {visibleDocuments.length > 0 ? "Click to upload more PDFs" : "Drop PDFs here or click to browse"}
               </div>
-              <div className={styles.dropSub}>Docling parses text, tables, and scanned PDFs · Max 50 MB each</div>
+              <div className={styles.dropSub}>OpenDataLoader parses digital text, tables, and layout · OCR scans are not supported · Max 50 MB each</div>
             </div>
           </SurfaceCard>
         </AccordionSection>

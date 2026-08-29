@@ -1,0 +1,8 @@
+# Runtime state, generated outputs, and machine-local caches are not architecture sources.
+backend/data/
+frontend/dist/
+tmp/
+output/
+*.pdf
+test_image.png
+frontend/public/favicon.svg

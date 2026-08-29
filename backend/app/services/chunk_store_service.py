@@ -80,18 +80,15 @@ class ChunkStoreService:
         user_id: str,
     ) -> list[str]:
         """Get all chunk IDs for a document."""
-        try:
-            rows = self.collection().get(
-                where={"document_id": document_id},
-                include=["metadatas"],
-            )
-            return [
-                str(chunk_id)
-                for chunk_id, meta in zip(rows.get("ids", []), rows.get("metadatas", []), strict=False)
-                if not user_id or str((meta or {}).get("user_id", "")) == user_id
-            ]
-        except Exception:
-            return []
+        rows = self.collection().get(
+            where={"document_id": document_id},
+            include=["metadatas"],
+        )
+        return [
+            str(chunk_id)
+            for chunk_id, meta in zip(rows.get("ids", []), rows.get("metadatas", []), strict=False)
+            if str((meta or {}).get("user_id", "")) == user_id
+        ]
 
     def publish_chunks(
         self,
@@ -103,33 +100,33 @@ class ChunkStoreService:
         if not chunk_ids:
             return
 
-        try:
-            rows = self.collection().get(
-                ids=chunk_ids,
-                include=["metadatas"],
+        rows = self.collection().get(ids=chunk_ids, include=["metadatas"])
+        fetched_ids = [str(chunk_id) for chunk_id in rows.get("ids", [])]
+        updated_metadatas = [
+            {**dict(metadata or {}), "is_indexed": 1}
+            for metadata in rows.get("metadatas", [])
+        ]
+        if len(fetched_ids) != len(updated_metadatas) or set(fetched_ids) != set(chunk_ids):
+            raise RuntimeError("Chroma returned incomplete or mismatched rows while publishing chunks.")
+        if any(
+            str(metadata.get("user_id", "")) != user_id
+            or str(metadata.get("document_id", "")) != document_id
+            for metadata in updated_metadatas
+        ):
+            raise RuntimeError("Chroma returned cross-scope metadata while publishing chunks.")
+
+        batch_size = 2000
+        for i in range(0, len(fetched_ids), batch_size):
+            self.collection().update(
+                ids=fetched_ids[i : i + batch_size],
+                metadatas=updated_metadatas[i : i + batch_size],
             )
-            updated_metadatas = [
-                {**dict(metadata or {}), "is_indexed": 1}
-                for metadata in rows.get("metadatas", [])
-            ]
-            
-            # Batch updates to respect Chroma's max batch size constraint (5461)
-            batch_size = 2000
-            for i in range(0, len(chunk_ids), batch_size):
-                batch_ids = chunk_ids[i : i + batch_size]
-                batch_metadatas = updated_metadatas[i : i + batch_size]
-                self.collection().update(ids=batch_ids, metadatas=batch_metadatas)
-        except Exception:
-            pass
 
     def delete_chunk_ids(self, chunk_ids: list[str]) -> None:
         """Delete specific chunk IDs from vector store."""
         if not chunk_ids:
             return
-        try:
-            self.collection().delete(ids=chunk_ids)
-        except Exception:
-            pass
+        self.collection().delete(ids=chunk_ids)
 
     def delete_chunks_for_document(
         self,

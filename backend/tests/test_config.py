@@ -21,22 +21,6 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.sqlite_path, expected / "app.db")
         self.assertEqual(settings.chroma_path, expected / "chroma")
         self.assertEqual(settings.kg_path, expected / "kg.pkl")
-        self.assertEqual(settings.docling_artifacts_dir, expected / "docling-models")
-
-    def test_explicit_docling_artifacts_dir_overrides_data_dir_default(self) -> None:
-        with tempfile.TemporaryDirectory() as data_dir, tempfile.TemporaryDirectory() as artifacts_dir:
-            with patch.dict(
-                os.environ,
-                {
-                    "RAG_DATA_DIR": data_dir,
-                    "RAG_DOCLING_ARTIFACTS_DIR": artifacts_dir,
-                },
-                clear=False,
-            ):
-                settings = load_settings()
-
-        self.assertEqual(settings.data_dir, Path(data_dir))
-        self.assertEqual(settings.docling_artifacts_dir, Path(artifacts_dir))
 
     def test_chat_rate_limits_default_to_strict_demo_values(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
@@ -44,6 +28,16 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(settings.chat_rate_limit_per_minute, 3)
         self.assertEqual(settings.chat_rate_limit_per_hour, 12)
+
+    def test_standard_nvidia_api_key_fallback_is_resolved_in_settings(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"RAG_NVIDIA_API_KEY": "", "NVIDIA_API_KEY": "fallback-key"},
+            clear=False,
+        ):
+            settings = load_settings()
+
+        self.assertEqual(settings.nvidia_api_key, "fallback-key")
 
     def test_chat_rate_limits_can_be_overridden_for_deployments(self) -> None:
         with patch.dict(

@@ -4,8 +4,8 @@ This repository contains a full local RAG chatbot application with:
 
 - a TypeScript React frontend that matches the provided mockup layout
 - a FastAPI backend for chat, sessions, ingestion, preview, topics, and graph APIs
-- a local-first retrieval pipeline built on ChromaDB, SQLite, Ollama, and Celery
-- Docling-based PDF parsing with OCR and table-structure extraction
+- a local-first retrieval pipeline built on ChromaDB, SQLite, FastEmbed, NVIDIA NIM, and Celery
+- OpenDataLoader PDF parsing for digital text, layout, lists, and tables
 - topic clustering, a directed knowledge graph, chat memory, and optional web fallback
 
 The repository started from the phased plan in [rag_chatbot_phases.md](./rag_chatbot_phases.md) and the UI reference in [chatbot_ui_mockup.html](./chatbot_ui_mockup.html). The implementation now covers the full Phase 1-6 scope that was planned across those documents.
@@ -21,7 +21,7 @@ At a high level, the app lets you:
 - visualize topic relationships in a knowledge graph
 - persist chat sessions and retrieve memory from past conversations
 - fall back to web search when the local corpus is not enough
-- parse text, tables, and scanned PDF pages through Docling
+- parse text, lists, tables, and layout from digital PDFs through OpenDataLoader
 
 ## Current Feature Set
 
@@ -38,8 +38,8 @@ At a high level, the app lets you:
 
 ### Retrieval And Ingestion
 
-- IBM Docling PDF parsing for text, layout, tables, and OCR
-- repeated margin header/footer cleanup using Docling block provenance
+- OpenDataLoader PDF parsing for digital text, layout, lists, and tables
+- repeated margin header/footer cleanup using OpenDataLoader block provenance
 - semantic chunking
 - LLM-first keyword and topic tag extraction with KeyBERT fallback
 - vector retrieval + BM25 + reciprocal rank fusion + reranking
@@ -101,7 +101,7 @@ Important service modules:
 - [history_service.py](./backend/app/services/history_service.py)
 - [topic_index_service.py](./backend/app/services/topic_index_service.py)
 - [kg_manager.py](./backend/app/services/kg_manager.py)
-- [docling_parser.py](./backend/app/services/docling_parser.py)
+- [opendataloader_parser.py](./backend/app/services/opendataloader_parser.py)
 - [query_rewrite_service.py](./backend/app/services/query_rewrite_service.py)
 - [web_search_service.py](./backend/app/services/web_search_service.py)
 
@@ -113,7 +113,6 @@ The app stores data locally inside [backend/data](./backend/data):
 - `chroma/`: ChromaDB vector store
 - `kg.pkl`: persisted directed knowledge graph
 - `uploads/`: uploaded PDF files
-- `docling-models/`: local Docling model artifacts used by parsing/OCR
 - `celery/`: filesystem transport directories for Celery
 
 Primary storage responsibilities:
@@ -156,30 +155,23 @@ This project has been verified on Windows with:
 
 - Python `3.11.9`
 - Node.js with `npm`
-- Ollama running locally
+- OpenJDK 17 available on `PATH` for OpenDataLoader
 
 Recommended local prerequisites:
 
 - Python `3.11.x`
 - Node.js `20+`
-- Ollama installed and running
-- enough RAM/disk for local embedding, reranking, and Docling model downloads
+- OpenJDK 17 installed and available on `PATH`
+- enough RAM/disk for FastEmbed model caching and ChromaDB
 
-## Ollama Models
+## Models
 
 The backend defaults are currently:
 
-- embedding model: `all-minilm` (384-dimensional embeddings)
-- chat model: `gemma4:31b-cloud`
+- local embedding model: `BAAI/bge-small-en-v1.5` through FastEmbed (384 dimensions)
+- NVIDIA chat model: `meta/llama-3.2-11b-vision-instruct`
 
-Pull them before starting the app:
-
-```powershell
-ollama pull all-minilm
-ollama pull gemma4:31b-cloud
-```
-
-You can verify model availability with:
+Set `RAG_NVIDIA_API_KEY` for chat generation. You can verify configured model access with:
 
 ```powershell
 cd D:\projects\chat\backend
@@ -210,10 +202,10 @@ The Celery worker is the **background ingestion engine**. It must be running whe
 
 The worker handles the full document processing pipeline:
 
-1. **Parsing** — Converts each PDF through Docling with layout, OCR, and table structure enabled by default
-2. **Source mapping** — Stores Docling labels, block refs, bounding boxes, and source text for preview/highlighting
+1. **Parsing** — Converts digital PDFs through OpenDataLoader core with text, layout, list, and table extraction
+2. **Source mapping** — Stores OpenDataLoader labels, block refs, bounding boxes, and source text for preview/highlighting
 3. **Chunking** — Splits extracted text into overlapping semantic chunks
-4. **Embedding** — Generates vector embeddings via Ollama and stores them in ChromaDB
+4. **Embedding** — Generates vector embeddings through NVIDIA NIM or the resolved local FastEmbed model and stores them in ChromaDB
 5. **Topic extraction** — Uses the LLM (with KeyBERT fallback) to generate topic tags
 6. **Clustering** — Assigns documents to topic collections
 7. **Knowledge graph** — Builds directed edges between related topics
@@ -320,11 +312,11 @@ Base prefix: `/api`
 
 Useful backend scripts in [backend/scripts](./backend/scripts):
 
-- [verify_models.py](./backend/scripts/verify_models.py): checks embeddings and chat generation against Ollama
+- [verify_models.py](./backend/scripts/verify_models.py): checks configured embeddings and NVIDIA chat generation
 - [run_celery_worker.py](./backend/scripts/run_celery_worker.py): starts the ingestion worker
 - [ingest_pdf.py](./backend/scripts/ingest_pdf.py): one-off ingest script
 - [generate_sample_pdf.py](./backend/scripts/generate_sample_pdf.py): generates a small sample PDF fixture
-- [generate_scanned_test_pdf.py](./backend/scripts/generate_scanned_test_pdf.py): generates an image-only scanned PDF fixture for Docling OCR verification
+- [generate_scanned_test_pdf.py](./backend/scripts/generate_scanned_test_pdf.py): generates an image-only fixture for verifying the explicit unsupported-OCR error path
 
 ## Environment Variables
 
@@ -334,15 +326,14 @@ Common environment variables:
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `RAG_OLLAMA_BASE_URL` | Ollama base URL | `http://localhost:11434` |
-| `RAG_OLLAMA_EMBED_MODEL` | embedding model | `all-minilm` |
+| `RAG_NVIDIA_BASE_URL` | NVIDIA NIM API base URL | `https://integrate.api.nvidia.com/v1` |
+| `RAG_NVIDIA_API_KEY` | NVIDIA NIM API key used for chat and cloud models | unset |
+| `RAG_EMBED_MODEL` | cloud or local embedding model | `BAAI/bge-small-en-v1.5` |
 | `RAG_EMBEDDING_DIMENSIONS` | expected embedding vector length | `384` |
-| `RAG_OLLAMA_CHAT_MODEL` | chat model | `gemma4:31b-cloud` |
-| `RAG_RERANKER_MODEL` | reranker model | `cross-encoder/ms-marco-MiniLM-L6-v2` |
+| `RAG_NVIDIA_CHAT_MODEL` | NVIDIA chat model | `meta/llama-3.2-11b-vision-instruct` |
+| `RAG_RERANKER_MODEL` | NVIDIA reranker model | `nvidia/nv-rerankqa-mistral-4b-v3` |
 | `RAG_ENABLE_CROSS_SESSION_MEMORY` | enable cross-session memory | `true` |
-| `RAG_DOCLING_ARTIFACTS_DIR` | local Docling model artifact directory | `backend/data/docling-models` |
-| `RAG_DOCLING_OCR` | enable Docling OCR | `true` |
-| `RAG_DOCLING_TABLE_STRUCTURE` | enable Docling table reconstruction | `true` |
+| `RAG_DATA_DIR` | persistent SQLite, Chroma, graph, upload, and queue root | `backend/data` |
 | `RAG_WEB_SEARCH_BACKEND` | search backend | `duckduckgo` |
 | `RAG_WEB_SEARCH_REGION` | search region | `us-en` |
 | `RAG_WEB_SEARCH_MAX_RESULTS` | max web results | `4` |
@@ -367,22 +358,22 @@ The frontend generates and stores a stable local user id automatically in browse
 - separate chat memory
 - support cross-session memory per local user
 
-## Notes On Docling Parsing
+## Notes On OpenDataLoader Parsing
 
-Docling is the document parser used by ingestion. It replaces the previous PyMuPDF plus Surya path.
+OpenDataLoader core is the document parser used by ingestion. The Docker image includes the small Java 17 runtime it requires.
 
 Current parsing path:
 
-- ingestion converts PDFs with Docling `DocumentConverter`
-- Docling OCR and table structure extraction are enabled by default
-- repeated marginal headers/footers are removed from Docling blocks before chunking
+- ingestion converts PDFs with `opendataloader_pdf.convert`
+- structured text blocks, headings, lists, tables, page coordinates, and source references are normalized before chunking
+- repeated marginal headers/footers are removed from parser blocks before chunking
 - chunk metadata stores parser name, content labels, table flags, source refs, source text, and source block boxes
 
-Important model artifact note:
+Important capability boundary:
 
-- first run downloads Docling layout/table/OCR models into `RAG_DOCLING_ARTIFACTS_DIR`
-- the local artifacts directory avoids Hugging Face cache symlink issues on Windows
-- `RAG_ENABLE_OCR` is still accepted as a legacy fallback for `RAG_DOCLING_OCR`
+- this small-runtime build intentionally uses OpenDataLoader core and does not include the hybrid OCR service
+- image-only/scanned PDFs fail with an explicit OCR-required message instead of being indexed as empty documents
+- `pypdfium2` is a digital-text fallback if OpenDataLoader conversion fails
 
 ## Design And UI Notes
 
@@ -404,8 +395,8 @@ The frontend intentionally separates:
 These are not necessarily bugs, but they are good to know:
 
 - topic labels are auto-generated from clustering and may look a little awkward on very small corpora
-- Docling adds noticeable time to ingestion because layout, table, and OCR models may process page images
-- first-time Docling runs can be slower due to model download and artifact warmup
+- OpenDataLoader starts a Java conversion process during PDF ingestion
+- image-only PDFs require a separately deployed OCR service and are intentionally unsupported by this image
 - if you run frontend and backend on non-default ports, set `VITE_API_BASE_URL` explicitly
 
 ## Troubleshooting
@@ -449,14 +440,13 @@ The backend already accepts local development origins by default, including arbi
 
 are still covered.
 
-### Docling Parsing Or OCR Fails
+### OpenDataLoader Parsing Fails
 
 Check:
 
-- `docling` is installed from `backend/requirements.txt`
-- Python version is `3.11.x`
-- `RAG_DOCLING_ARTIFACTS_DIR` is writable
-- first-run network access is available, or Docling models are already prefetched into the artifacts directory
+- `opendataloader-pdf` is installed from `backend/requirements.txt`
+- Python version is `3.11.x` and `java -version` reports Java 17
+- the PDF has a digital text layer; scanned/image-only PDFs need a separate OCR pipeline
 
 ### Duplicate Worker Or Server Processes
 

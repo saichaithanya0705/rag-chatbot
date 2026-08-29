@@ -2,10 +2,14 @@ services:
   - type: web
     name: rag-chatbot-backend
     runtime: docker
-    plan: free
+    plan: starter
     dockerfilePath: backend/Dockerfile
     dockerContext: backend
-    healthCheckPath: /api/system/health
+    healthCheckPath: /api/system/ready
+    disk:
+      name: rag-chatbot-data
+      mountPath: /app/data
+      sizeGB: 1
     envVars:
       - key: RAG_NVIDIA_API_KEY
         sync: false
@@ -21,7 +25,3 @@ services:
         value: nvidia/llama-nemotron-embed-1b-v2
       - key: RAG_EMBEDDING_DIMENSIONS
         value: "1024"
-      - key: RAG_DOCLING_OCR
-        value: "false"
-      - key: RAG_DOCLING_TABLE_STRUCTURE
-        value: "false"

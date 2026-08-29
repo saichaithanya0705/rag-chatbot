@@ -103,14 +103,15 @@ export function PdfCanvasViewer({
     if (!pdfDoc) {
       return;
     }
+    const document = pdfDoc;
 
     async function renderPage() {
       setLoading(true);
       setError(null);
 
       try {
-        const clampedPageNumber = Math.max(1, Math.min(pageNumber, pdfDoc.numPages));
-        const page = await pdfDoc.getPage(clampedPageNumber);
+        const clampedPageNumber = Math.max(1, Math.min(pageNumber, document.numPages));
+        const page = await document.getPage(clampedPageNumber);
         if (!active) return;
 
         const canvas = canvasRef.current;

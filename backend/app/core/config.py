@@ -35,9 +35,6 @@ class Settings:
     celery_queue_name: str
     celery_transport_role: str
     celery_task_always_eager: bool
-    docling_artifacts_dir: Path
-    docling_ocr_enabled: bool
-    docling_table_structure_enabled: bool
     web_search_backend: str
     web_search_region: str
     web_search_max_results: int
@@ -67,10 +64,6 @@ def _resolve_allowed_origin_regex(raw_value: str | None) -> str:
     candidate = raw_value.strip() if raw_value else r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
     # Normalize common over-escaped env/file values so local dev ports keep matching.
     return candidate.replace("\\\\.", r"\.").replace("\\\\d", r"\d")
-
-
-def _env_bool(name: str, default: str = "false") -> bool:
-    return os.getenv(name, default).lower() in {"1", "true", "yes", "on"}
 
 
 def _env_int(name: str, default: str) -> int:
@@ -107,8 +100,6 @@ def load_settings() -> Settings:
     celery_reply_dir = celery_root / "reply"
     celery_control_dir = celery_root / "control"
     celery_processed_dir = celery_root / "processed"
-    docling_artifacts_dir = _env_path("RAG_DOCLING_ARTIFACTS_DIR") or (data_dir / "docling-models")
-
     return Settings(
         project_name="Local RAG Chat Backend",
         api_prefix="/api",
@@ -124,8 +115,8 @@ def load_settings() -> Settings:
         celery_control_dir=celery_control_dir,
         celery_processed_dir=celery_processed_dir,
         nvidia_base_url=os.getenv("RAG_NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
-        nvidia_api_key=os.getenv("RAG_NVIDIA_API_KEY", ""),
-        embed_model=os.getenv("RAG_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2"),
+        nvidia_api_key=os.getenv("RAG_NVIDIA_API_KEY") or os.getenv("NVIDIA_API_KEY", ""),
+        embed_model=os.getenv("RAG_EMBED_MODEL", "BAAI/bge-small-en-v1.5"),
         embedding_dimensions=_env_int("RAG_EMBEDDING_DIMENSIONS", "384"),
         chat_model=os.getenv("RAG_NVIDIA_CHAT_MODEL", "meta/llama-3.2-11b-vision-instruct"),
         reranker_model=os.getenv(
@@ -149,9 +140,6 @@ def load_settings() -> Settings:
             "false",
         ).lower()
         in {"1", "true", "yes", "on"},
-        docling_artifacts_dir=docling_artifacts_dir,
-        docling_ocr_enabled=_env_bool("RAG_DOCLING_OCR", os.getenv("RAG_ENABLE_OCR", "true")),
-        docling_table_structure_enabled=_env_bool("RAG_DOCLING_TABLE_STRUCTURE", "true"),
         web_search_backend=os.getenv("RAG_WEB_SEARCH_BACKEND", "duckduckgo"),
         web_search_region=os.getenv("RAG_WEB_SEARCH_REGION", "us-en"),
         web_search_max_results=int(os.getenv("RAG_WEB_SEARCH_MAX_RESULTS", "4")),
@@ -184,6 +172,5 @@ def ensure_runtime_directories(settings: Settings) -> None:
         settings.celery_reply_dir,
         settings.celery_control_dir,
         settings.celery_processed_dir,
-        settings.docling_artifacts_dir,
     ):
         path.mkdir(parents=True, exist_ok=True)

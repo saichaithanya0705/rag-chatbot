@@ -31,7 +31,7 @@ class _FakeSplitter:
 
 
 class IngestionChunkBuilderTests(unittest.IsolatedAsyncioTestCase):
-    async def test_non_qa_documents_use_docling_block_text_as_splitter_context(self) -> None:
+    async def test_non_qa_documents_use_parser_block_text_as_splitter_context(self) -> None:
         builder = IngestionChunkBuilder(text_splitter=_FakeSplitter())
 
         drafts, carryover = await builder.build_page_chunk_drafts(

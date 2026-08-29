@@ -21,7 +21,7 @@ CHAT_RATE_LIMIT_DETAIL = "This portfolio demo has a strict chat limit. Please wa
 logger = logging.getLogger(__name__)
 
 # Per-session streaming lock: prevents two concurrent streams for the same session
-# from queuing duplicate LLM calls on a single Ollama instance.
+# from queuing duplicate LLM calls for the same session.
 _session_stream_locks: dict[str, asyncio.Lock] = {}
 
 

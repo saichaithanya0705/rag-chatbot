@@ -25,7 +25,6 @@ def _test_settings(tmp_path: Path):
         celery_reply_dir=celery_root / "reply",
         celery_control_dir=celery_root / "control",
         celery_processed_dir=celery_root / "processed",
-        docling_artifacts_dir=data_dir / "docling-models",
         celery_broker_url="filesystem://",
         celery_transport_role="producer",
         celery_task_always_eager=False,

@@ -9,7 +9,7 @@ from app.services.ingestion_service import IngestionService
 
 
 class _FakeDocumentParser:
-    parser_name = "docling"
+    parser_name = "opendataloader_pdf"
 
     def parse(self, pdf_path: Path) -> ParsedDocument:
         return ParsedDocument(
@@ -52,7 +52,7 @@ class _FakeDocumentService:
         return None
 
     def get_document_by_id(self, document_id: str, *, user_id: str) -> dict[str, object] | None:
-        return {"pdf_name": "docling.pdf"}
+        return {"pdf_name": "opendataloader.pdf"}
 
     def update_document_progress(self, *args: object, **kwargs: object) -> None:
         return None
@@ -109,8 +109,8 @@ class _FakeTopicIndexService:
     pass
 
 
-class IngestionDoclingContractTests(unittest.IsolatedAsyncioTestCase):
-    async def test_ingest_pdf_uses_docling_pages_and_adds_source_metadata(self) -> None:
+class IngestionOpenDataLoaderContractTests(unittest.IsolatedAsyncioTestCase):
+    async def test_ingest_pdf_uses_parser_pages_and_adds_source_metadata(self) -> None:
         document_service = _FakeDocumentService()
         chroma_store = _FakeChromaStore()
         ingestion = IngestionService(
@@ -127,7 +127,7 @@ class IngestionDoclingContractTests(unittest.IsolatedAsyncioTestCase):
             result = await ingestion.ingest_pdf(
                 Path(pdf.name),
                 document_id="doc-1",
-                pdf_name="docling.pdf",
+                pdf_name="opendataloader.pdf",
                 user_id="user-1",
             )
 
@@ -141,7 +141,7 @@ class IngestionDoclingContractTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         metadata = chroma_store.collection_instance.upserts[0]["metadatas"][0]  # type: ignore[index]
-        self.assertEqual(metadata["parser"], "docling")
+        self.assertEqual(metadata["parser"], "opendataloader_pdf")
         self.assertEqual(metadata["content_labels"], '["section_header", "table"]')
         self.assertEqual(metadata["page_start"], 1)
         self.assertEqual(metadata["page_end"], 1)

@@ -51,6 +51,7 @@ def test_health_reports_global_parser_capabilities_when_container_is_ready() -> 
         document_service=SimpleNamespace(count_indexed_chunks_all=lambda: 7),
         ingestion_dispatcher=SimpleNamespace(mode="local"),
         document_parser=SimpleNamespace(
+            ocr_enabled=False,
             is_available=lambda: True,
             ocr_pipeline_available=lambda: False,
         ),
@@ -69,10 +70,11 @@ def test_health_reports_global_parser_capabilities_when_container_is_ready() -> 
     assert payload["thinkingSupported"] is True
 
 
-def test_health_skips_ocr_probe_when_ocr_is_disabled() -> None:
-    settings = replace(get_settings(), docling_ocr_enabled=False)
-
+def test_health_skips_ocr_probe_when_parser_has_no_ocr_capability() -> None:
+    settings = get_settings()
     class _Parser:
+        ocr_enabled = False
+
         def is_available(self) -> bool:
             return True
 
