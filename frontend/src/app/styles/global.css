@@ -14,10 +14,19 @@ body {
   margin: 0;
   min-height: 100vh;
   color: var(--text-strong);
-  background: var(--surface-gradient-warm);
+  background-color: var(--bg-canvas);
+  background-image: 
+    var(--texture-grid),
+    var(--crt-vignette),
+    var(--surface-gradient-warm);
+  background-size: 
+    var(--texture-grid-size),
+    100% 100%,
+    100% 100%;
+  background-attachment: fixed;
   /* Smooth scrollbars for Firefox */
   scrollbar-width: thin;
-  scrollbar-color: var(--border-soft) transparent;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 body,

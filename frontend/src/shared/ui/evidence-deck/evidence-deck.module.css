@@ -1,0 +1,268 @@
+.deckContainer {
+  margin-top: 14px;
+  border-top: 1px dashed var(--border-strong);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.deckHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.deckHeaderToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all var(--transition-fast);
+}
+
+.deckHeaderToggle:hover {
+  background: var(--surface-accent);
+  color: var(--accent-ink);
+}
+
+.deckHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.deckIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+
+.deckTitle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--text-strong);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.deckCountBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.deckTelemetry {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-subtle-aa);
+  letter-spacing: 0.3px;
+}
+
+.deckHeaderRight {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-subtle-aa);
+}
+
+.chevronIcon {
+  transition: transform var(--transition-medium);
+}
+
+.chevronRotated {
+  transform: rotate(180deg);
+}
+
+/* Grid of rich cards */
+.deckCardsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 8px;
+  animation: hudPopIn 200ms ease;
+}
+
+@media (max-width: 600px) {
+  .deckCardsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sourceCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+  text-align: left;
+  user-select: none;
+  transition: 
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    background var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.sourceCard:hover {
+  background: var(--surface-base);
+  border-color: var(--accent-border);
+  box-shadow: var(--shadow-card-hover), var(--glow-subtle);
+  transform: translateY(-1.5px);
+}
+
+.sourceCardActive {
+  background: var(--surface-accent) !important;
+  border-color: var(--accent) !important;
+  box-shadow: var(--shadow-card-hover), var(--glow-accent) !important;
+  transform: translateY(-2px) scale(1.01);
+}
+
+.cardPdf {
+  border-left: 3px solid var(--accent);
+}
+
+.cardWeb {
+  border-left: 3px solid var(--tech-amber);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.cardIndexBadge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.cardIndexGlyph {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.cardTypePill {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--surface-muted);
+  color: var(--text-subtle-aa);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.cardPageTag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--tech-amber);
+  background: var(--warning-surface);
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 0.5px solid rgba(200, 90, 50, 0.2);
+}
+
+.cardHostTag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-subtle-aa);
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardTitle {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-strong);
+  line-height: 1.35;
+  margin-bottom: 6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.cardExcerpt {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  background: var(--surface-base);
+  border: 0.5px solid var(--border-soft);
+  border-radius: 4px;
+  padding: 5px 8px;
+  margin-bottom: 8px;
+  font-style: italic;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  position: relative;
+}
+
+.cardQuoteMarker {
+  font-family: var(--font-heading);
+  font-weight: bold;
+  font-size: 13px;
+  color: var(--accent);
+  margin-right: 2px;
+}
+
+.cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: auto;
+  padding-top: 4px;
+  border-top: 0.5px solid var(--border-soft);
+}
+
+.cardActionHint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: color var(--transition-fast);
+}
+
+.sourceCard:hover .cardActionHint {
+  color: var(--accent-strong);
+}

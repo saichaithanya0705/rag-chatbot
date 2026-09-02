@@ -107,6 +107,39 @@ the required audit location.
 - Frontend validation: 15 tests, typecheck, and production build passed; Vite retains an existing
   688.82 kB workbench chunk warning.
 
+## Addendum — Public API Entry Point (2026-08-29)
+
+**Scope:** The public `GET /` entry point added in commit `1113cdf`, its
+FastAPI application-lifecycle boundary, its regression test, and the Render
+blueprint health contract. `docs/` is absent, so this root-level audit remains
+the canonical report.
+
+### Verdict
+
+**Score: 8/100 — Minimal slop risk**
+**Confidence: High**
+
+Graphify places the change in the application lifecycle/readiness community,
+away from the RAG and knowledge-graph ownership boundaries. The scanner's
+repository-wide 86/100 source-augmented score is triage noise for this narrow
+change: its broad-exception, subprocess, prompt, and dynamic-access hits are
+outside the edited route and were not used as findings without source evidence.
+
+| Signal | Graph evidence | Source evidence | Classification | Root cause | Permanent fix | Prevention gate |
+|---|---|---|---|---|---|---|
+| The deployed public root returned `404 Not Found` despite the service being healthy | System readiness health is a distinct five-node community; application lifecycle is a bounded orchestration community | `backend/app/main.py` had no `/` route; live `https://rag-chatbot-api-0612.onrender.com/` returned 404 while `/docs` and `/api/system/ready` returned 200 | Confirmed operational contract gap — fixed in source | The application exposed only internal API routes, leaving the public service URL without an entry point | `public_api_entrypoint()` returns a concise status, documentation, and readiness map at `/` without coupling to the container bootstrap | Keep a public-root HTTP regression test and verify the deployed candidate after every Render rollout |
+| The first regression test invoked `APIRoute.endpoint()` directly | The change is part of the HTTP application boundary, not a pure helper | `backend/tests/test_system_health.py` bypassed FastAPI routing, response serialization, and status handling | Confirmed verification-integrity signal — fixed | The route was tested as a Python function instead of as an HTTP contract | Replaced the direct invocation with `TestClient` and a no-op lifespan limited to this test; the test now proves an actual `GET /` returns JSON 200 without starting external services | Prefer ASGI/HTTP tests for public routes; isolate lifecycle side effects rather than calling endpoint functions directly |
+| Broad startup catch in the connected lifespan module | Scanner flagged `backend/app/main.py:38`; graph identifies startup/readiness as a boundary | `_bootstrap_container()` stores the error and the readiness/health routes surface starting or failed state; existing tests cover those states | Benign, governed boundary | Liveness must survive a failed optional container bootstrap so Render can distinguish process health from application readiness | No change required; the exception is logged and converted into explicit readiness behavior, not silently swallowed | Preserve failure-state tests and avoid adding catch-all fallbacks outside lifecycle ownership |
+
+### Validation
+
+- Graphify report read first: `graphify-out/GRAPH_REPORT.md` (2026-08-29; 1,459 nodes and 2,666 edges).
+- Required triage run before source review: `py -3.11 C:/Users/SAI/.codex/skills/audit-ai-slop/scripts/graphify_slop_scan.py --graphify-out graphify-out --source-root . --format markdown` — graph-only 26/100; source-augmented 86/100, treated as triage rather than a verdict.
+- `py -3.11 -m pytest tests/test_system_health.py -q` — 8 passed.
+- `py -3.11 -m compileall -q app` and `git diff --check` — passed.
+- The scanner was not rerun after the test repair, per the audit completion gate.
+- Residual operational risk: Render still serves the prior image until its service configuration is changed to deploy from `main`; that is an external deployment-setting change, not a source-code defect.
+
 **Scope:** The Docling-to-OpenDataLoader migration, its parser-to-knowledge-graph spine,
 embedding runtime selection, Chroma publication, and Docker/Render readiness contract.
 Graphify report reviewed: `graphify-out/GRAPH_REPORT.md` (2026-08-29; 1,459 nodes,

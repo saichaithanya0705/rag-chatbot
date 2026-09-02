@@ -7,6 +7,8 @@ import type { Citation } from "@/shared/api/types";
 interface MessageMarkdownProps {
   content: string;
   citations?: Citation[];
+  activeCitationId?: string | null;
+  onCitationHover?: (citationId: string | null) => void;
 }
 
 function CodeBlock({ children, className }: { children: string; className?: string }) {
@@ -122,7 +124,7 @@ function CodeBlock({ children, className }: { children: string; className?: stri
             border: "none",
             borderRadius: 0,
             fontSize: "12px",
-            fontFamily: "'Fira Code', 'Consolas', monospace",
+            fontFamily: "var(--font-mono)",
             lineHeight: "1.55",
             display: "block",
             whiteSpace: "pre",
@@ -136,19 +138,43 @@ function CodeBlock({ children, className }: { children: string; className?: stri
   );
 }
 
-function InlineCitationLink({ citation, num }: { citation: Citation; num: number }) {
-  const { actions } = useWorkbench();
+function InlineCitationLink({
+  citation,
+  num,
+  isActive,
+  onHover,
+}: {
+  citation: Citation;
+  num: number;
+  isActive?: boolean;
+  onHover?: (id: string | null) => void;
+}) {
+  let actions: ReturnType<typeof useWorkbench>["actions"] | null = null;
+  try {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    actions = useWorkbench().actions;
+  } catch {
+    actions = null;
+  }
   const [hovered, setHovered] = useState(false);
 
   function handleClick(e: React.MouseEvent) {
     e.preventDefault();
-    void actions.openPdfPreview(citation);
+    if (citation.kind === "pdf") {
+      void actions?.openPdfPreview(citation);
+    } else if (citation.url) {
+      window.open(citation.url, "_blank", "noopener,noreferrer");
+    }
   }
 
-  const tooltipText =
-    citation.kind === "pdf"
-      ? `${citation.pdfName} · Page ${citation.page}`
-      : `${citation.title || "Web Link"} · ${citation.url}`;
+  const isPdf = citation.kind === "pdf";
+  const title = isPdf
+    ? citation.pdfName || "Indexed PDF"
+    : citation.title || citation.url || "Web Source";
+  const excerpt = citation.sourceText || citation.excerpt;
+  const excerptSnippet = excerpt
+    ? excerpt.replace(/\s+/g, " ").trim().slice(0, 110)
+    : null;
 
   return (
     <span
@@ -156,9 +182,16 @@ function InlineCitationLink({ citation, num }: { citation: Citation; num: number
         position: "relative",
         display: "inline-block",
         userSelect: "none",
+        verticalAlign: "baseline",
       }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={() => {
+        setHovered(true);
+        onHover?.(citation.id || `idx-${num - 1}`);
+      }}
+      onMouseLeave={() => {
+        setHovered(false);
+        onHover?.(null);
+      }}
     >
       <button
         onClick={handleClick}
@@ -166,23 +199,32 @@ function InlineCitationLink({ citation, num }: { citation: Citation; num: number
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "var(--surface-accent)",
-          border: "0.5px solid var(--accent-border)",
-          color: "var(--accent-ink)",
-          fontSize: "9px",
+          background: isActive ? "var(--accent)" : hovered ? "var(--surface-accent)" : "var(--surface-soft)",
+          border: isActive
+            ? "1px solid var(--accent)"
+            : hovered
+            ? "1px solid var(--accent)"
+            : "0.5px solid var(--border-strong)",
+          color: isActive ? "#ffffff" : hovered ? "var(--accent-ink)" : "var(--accent)",
+          fontFamily: "var(--font-mono)",
+          fontSize: "10px",
           fontWeight: 700,
           borderRadius: "4px",
-          padding: "1px 4px",
+          padding: "0 4px",
           margin: "0 2px",
+          height: "17px",
           cursor: "pointer",
           verticalAlign: "super",
+          boxShadow: isActive || hovered ? "var(--glow-accent)" : "var(--shadow-soft)",
+          transform: isActive || hovered ? "translateY(-1px) scale(1.06)" : "none",
           transition: "all var(--transition-fast)",
         }}
         type="button"
-        title={tooltipText}
+        aria-label={`Source citation ${num}: ${title}`}
       >
-        {num}
+        [{num}]
       </button>
+
       {hovered && (
         <span
           style={{
@@ -190,22 +232,98 @@ function InlineCitationLink({ citation, num }: { citation: Citation; num: number
             bottom: "100%",
             left: "50%",
             transform: "translateX(-50%) translateY(-6px)",
-            backgroundColor: "var(--text-strong)",
-            color: "var(--surface-soft)",
-            padding: "5px 8px",
-            borderRadius: "6px",
-            fontSize: "10px",
-            whiteSpace: "nowrap",
+            backgroundColor: "var(--surface-hud)",
+            backdropFilter: "blur(8px)",
+            color: "var(--text-strong)",
+            border: "1px solid var(--accent-border)",
+            padding: "8px 10px",
+            borderRadius: "8px",
+            fontSize: "11px",
+            width: "max-content",
+            maxWidth: "260px",
             zIndex: 9999,
-            boxShadow: "var(--shadow-floating)",
+            boxShadow: "var(--shadow-hud), var(--glow-subtle)",
             pointerEvents: "none",
-            lineHeight: "1.2",
-            animation: "fadeIn 150ms ease",
+            lineHeight: "1.35",
+            animation: "hudPopIn 160ms ease",
+            textAlign: "left",
+            display: "flex",
+            flexDirection: "column",
+            gap: "4px",
           }}
         >
-          <span style={{ fontWeight: 600 }}>{citation.kind === "pdf" ? "📄 PDF" : "🌐 Web"}</span>{" "}
-          {citation.kind === "pdf" ? citation.pdfName : (citation.title || "Web Link")}
-          {citation.kind === "pdf" && ` (p. ${citation.page})`}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "6px" }}>
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: "9px",
+                fontWeight: 700,
+                color: isPdf ? "var(--accent)" : "var(--tech-amber)",
+                background: isPdf ? "var(--surface-accent)" : "var(--warning-surface)",
+                padding: "1px 4px",
+                borderRadius: "3px",
+                textTransform: "uppercase",
+              }}
+            >
+              {isPdf ? "📄 PDF EVIDENCE" : "🌐 WEB EVIDENCE"}
+            </span>
+            {isPdf && citation.page !== undefined && (
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "9px",
+                  fontWeight: 600,
+                  color: "var(--text-subtle-aa)",
+                }}
+              >
+                p. {citation.page}
+              </span>
+            )}
+          </div>
+
+          <div
+            style={{
+              fontWeight: 600,
+              fontSize: "11px",
+              color: "var(--text-strong)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {title}
+          </div>
+
+          {excerptSnippet && (
+            <div
+              style={{
+                fontSize: "10px",
+                color: "var(--text-muted)",
+                fontStyle: "italic",
+                borderLeft: "2px solid var(--accent)",
+                paddingLeft: "6px",
+                marginTop: "2px",
+                lineHeight: "1.3",
+              }}
+            >
+              “{excerptSnippet}...”
+            </div>
+          )}
+
+          <div
+            style={{
+              marginTop: "4px",
+              paddingTop: "4px",
+              borderTop: "0.5px solid var(--border-soft)",
+              fontFamily: "var(--font-mono)",
+              fontSize: "9px",
+              fontWeight: 600,
+              color: "var(--accent)",
+              textAlign: "right",
+            }}
+          >
+            {isPdf ? "Click to view page in PDF preview ➔" : "Click to open web source ↗"}
+          </div>
         </span>
       )}
     </span>
@@ -272,7 +390,12 @@ function preprocessContent(content: string, citations?: Citation[]): string {
   return processed;
 }
 
-export function MessageMarkdown({ content, citations }: MessageMarkdownProps) {
+export function MessageMarkdown({
+  content,
+  citations,
+  activeCitationId,
+  onCitationHover,
+}: MessageMarkdownProps) {
   // Pre-process text to convert raw RAG markers to interactive markdown links
   const processedText = useMemo(() => preprocessContent(content, citations), [content, citations]);
 
@@ -284,7 +407,17 @@ export function MessageMarkdown({ content, citations }: MessageMarkdownProps) {
           const idx = parseInt(href.replace("citation://", ""), 10);
           const citation = citations?.[idx];
           if (citation) {
-            return <InlineCitationLink citation={citation} num={idx + 1} />;
+            const isActive =
+              activeCitationId === citation.id ||
+              activeCitationId === `idx-${idx}`;
+            return (
+              <InlineCitationLink
+                citation={citation}
+                num={idx + 1}
+                isActive={isActive}
+                onHover={onCitationHover}
+              />
+            );
           }
         }
         return (
@@ -403,10 +536,14 @@ export function MessageMarkdown({ content, citations }: MessageMarkdownProps) {
       },
     };
     return comps;
-  }, [citations]);
+  }, [citations, activeCitationId, onCitationHover]);
 
   return (
-    <Markdown components={dynamicComponents} remarkPlugins={[remarkGfm]}>
+    <Markdown
+      components={dynamicComponents}
+      remarkPlugins={[remarkGfm]}
+      urlTransform={(url) => url}
+    >
       {processedText}
     </Markdown>
   );

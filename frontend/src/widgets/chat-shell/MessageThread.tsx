@@ -2,45 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { useWorkbench } from "@/app/providers/workbench/WorkbenchProvider";
 import type { Citation, Message } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
-import { CitationChip } from "@/shared/ui/citation-chip/CitationChip";
+import { EvidenceDeck } from "@/shared/ui/evidence-deck/EvidenceDeck";
 import { MessageMarkdown } from "@/shared/ui/message-markdown/MessageMarkdown";
 import threadStyles from "./message-thread.module.css";
 import chatStyles from "./chat-view.module.css";
 
 const styles = { ...threadStyles, ...chatStyles };
-
-function getWebCitationLabel(citation: Citation) {
-  if (citation.title) {
-    return citation.title;
-  }
-
-  if (!citation.url) {
-    return "Web result";
-  }
-
-  try {
-    return new URL(citation.url).hostname.replace(/^www\./, "");
-  } catch {
-    return citation.url;
-  }
-}
-
-function getPdfCitationLabel(citation: Citation) {
-  const base = `${citation.pdfName ?? "PDF"} · p.${citation.page ?? "?"}`;
-  const sourceLocation = citation.sourceLocation ?? (citation.hasTable ? "table" : undefined);
-  return sourceLocation ? `${base} · ${sourceLocation}` : base;
-}
-
-function getPdfCitationTitle(citation: Citation) {
-  const sourceText = citation.sourceText ?? citation.excerpt;
-  if (!sourceText) {
-    return citation.pdfName ?? "Open PDF preview";
-  }
-
-  const sourceRefs =
-    citation.sourceRefs && citation.sourceRefs.length > 0 ? `\n${citation.sourceRefs.join(", ")}` : "";
-  return `${sourceText}${sourceRefs}`;
-}
 
 function getAnswerTraceItems(message: Message) {
   const items: string[] = [];
@@ -83,7 +50,9 @@ function getDisplayTraceItems(message: Message) {
 function getModelThinking(message: Message) {
   const content = message.modelThinking?.trim();
   return content && content.length > 0 ? content : null;
-}function showModelThinkingPanel(message: Message, thinkingEnabled: boolean) {
+}
+
+function showModelThinkingPanel(message: Message, thinkingEnabled: boolean) {
   return thinkingEnabled && Boolean(message.thinkingRequested);
 }
 
@@ -194,6 +163,7 @@ export function MessageThread() {
   const { state, actions } = useWorkbench();
   const threadRef = useRef<HTMLDivElement | null>(null);
   const [showScrollFab, setShowScrollFab] = useState(false);
+  const [hoveredCitationId, setHoveredCitationId] = useState<string | null>(null);
   const messages = state.messagesBySession[state.activeSessionId] ?? [];
 
   useEffect(() => {
@@ -298,6 +268,15 @@ export function MessageThread() {
                 </div>
                 <span className={styles.botName}>RAG Assistant</span>
                 <span className={styles.botModelBadge}>NVIDIA NIM</span>
+                {message.citations.length > 0 && (
+                  <span className={styles.botCitationTelemetry}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                    </svg>
+                    {message.citations.length} CITED
+                  </span>
+                )}
               </div>
             )}
 
@@ -371,7 +350,22 @@ export function MessageThread() {
                       </details>
                     )}
 
-                    <MessageMarkdown content={message.content} citations={message.citations} />
+                    <MessageMarkdown
+                      content={message.content}
+                      citations={message.citations}
+                      activeCitationId={hoveredCitationId}
+                      onCitationHover={setHoveredCitationId}
+                    />
+
+                    {/* Integrated Evidence Deck inside the assistant bubble */}
+                    {message.citations.length > 0 && (
+                      <EvidenceDeck
+                        citations={message.citations}
+                        activeCitationId={hoveredCitationId}
+                        onCitationHover={setHoveredCitationId}
+                        onSelectPdfCitation={(citation) => void actions.openPdfPreview(citation)}
+                      />
+                    )}
                   </>
                 ) : (
                   <div className={styles.loadingDots}>
@@ -402,30 +396,6 @@ export function MessageThread() {
             {message.role === "assistant" && hasVisibleAssistantContent(message) ? (
               <div className={styles.assistantActionsRow}>
                 <CopyMessageButton text={message.content} />
-              </div>
-            ) : null}
-
-            {message.citations.length > 0 ? (
-              <div className={styles.citations}>
-                {message.citations.map((citation) =>
-                  citation.kind === "pdf" ? (
-                    <CitationChip
-                      key={citation.id}
-                      label={getPdfCitationLabel(citation)}
-                      onClick={() => void actions.openPdfPreview(citation)}
-                      title={getPdfCitationTitle(citation)}
-                      variant="pdf"
-                    />
-                  ) : (
-                    <CitationChip
-                      href={citation.url}
-                      key={citation.id}
-                      label={getWebCitationLabel(citation)}
-                      title={citation.url ?? citation.title ?? "Open web source"}
-                      variant="web"
-                    />
-                  ),
-                )}
               </div>
             ) : null}
 
@@ -470,3 +440,4 @@ export function MessageThread() {
     </div>
   );
 }
+

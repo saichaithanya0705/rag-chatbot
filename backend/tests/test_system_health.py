@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -130,9 +131,20 @@ def test_ready_returns_ok_when_container_is_ready() -> None:
 def test_public_root_describes_api_entrypoint() -> None:
     from app.main import app
 
-    root_route = next(route for route in app.routes if getattr(route, "path", None) == "/")
+    @asynccontextmanager
+    async def no_lifespan(_: FastAPI):
+        yield
 
-    assert root_route.endpoint() == {
+    original_lifespan = app.router.lifespan_context
+    app.router.lifespan_context = no_lifespan
+    try:
+        with TestClient(app) as client:
+            response = client.get("/")
+    finally:
+        app.router.lifespan_context = original_lifespan
+
+    assert response.status_code == 200
+    assert response.json() == {
         "service": "Local RAG Chat Backend",
         "status": "ok",
         "documentation": "/docs",

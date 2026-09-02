@@ -34,6 +34,54 @@
   to   { transform: scale(1);    opacity: 1; }
 }
 
+@keyframes phosphorGlow {
+  0%, 100% {
+    box-shadow: 0 0 6px rgba(43, 76, 126, 0.16);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(43, 76, 126, 0.32);
+  }
+}
+
+@keyframes beaconBlink {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+}
+
+@keyframes sourceTargetFlash {
+  0% {
+    background-color: var(--accent-glow-surface);
+    border-color: var(--accent);
+    box-shadow: 0 0 12px var(--accent);
+  }
+  50% {
+    background-color: var(--surface-accent);
+    border-color: var(--accent-strong);
+    box-shadow: 0 0 18px var(--accent-strong);
+  }
+  100% {
+    background-color: var(--surface-accent);
+    border-color: var(--accent-border);
+  }
+}
+
+@keyframes hudPopIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
