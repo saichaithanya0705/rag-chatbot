@@ -10,6 +10,34 @@ from app.services.opendataloader_parser import OpenDataLoaderDocumentParser
 
 
 class OpenDataLoaderDocumentParserTests(unittest.TestCase):
+    def test_parse_uses_pdfium_when_opendataloader_conversion_fails(self) -> None:
+        parser = OpenDataLoaderDocumentParser()
+        expected = object()
+        pdf_path = Path("document.pdf")
+
+        with (
+            patch.object(parser, "opendataloader_available", return_value=True),
+            patch.object(parser, "fallback_parser_available", return_value=True),
+            patch.object(parser, "_parse_opendataloader", side_effect=RuntimeError("java failed")),
+            patch.object(parser, "_parse_fallback_pdfium", return_value=expected) as fallback,
+        ):
+            parsed = parser.parse(pdf_path)
+
+        self.assertIs(parsed, expected)
+        fallback.assert_called_once_with(pdf_path)
+
+    def test_parse_reports_the_last_engine_error_when_both_parsers_fail(self) -> None:
+        parser = OpenDataLoaderDocumentParser()
+
+        with (
+            patch.object(parser, "opendataloader_available", return_value=True),
+            patch.object(parser, "fallback_parser_available", return_value=True),
+            patch.object(parser, "_parse_opendataloader", side_effect=RuntimeError("java failed")),
+            patch.object(parser, "_parse_fallback_pdfium", side_effect=RuntimeError("pdfium failed")),
+        ):
+            with self.assertRaisesRegex(ValueError, "Last parser error: pdfium failed"):
+                parser.parse(Path("document.pdf"))
+
     def test_structured_json_preserves_nested_text_tables_lists_and_provenance(self) -> None:
         parser = OpenDataLoaderDocumentParser()
         data = {

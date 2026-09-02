@@ -75,6 +75,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         nvidia_base_url=settings.nvidia_base_url,
         nvidia_api_key=settings.nvidia_api_key,
         expected_embedding_dimensions=embedding_runtime.dimensions,
+        local_embedding_cache_dir=settings.model_cache_dir,
     )
     document_service = DocumentService(database=database, chroma_store=chroma_store)
     document_preview_service = DocumentPreviewService(document_service)

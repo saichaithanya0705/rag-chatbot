@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import httpx
@@ -11,6 +13,7 @@ from app.services.nvidia_client import (
     DEFAULT_LOCAL_EMBEDDING_DIMENSIONS,
     DEFAULT_LOCAL_EMBEDDING_MODEL,
     NvidiaClient,
+    _load_local_embedding_model,
     resolve_embedding_model_id,
     resolve_embedding_runtime,
 )
@@ -88,6 +91,33 @@ class _StreamingHttpClient:
 
 
 class NvidiaClientTests(unittest.IsolatedAsyncioTestCase):
+    def test_incomplete_application_cache_uses_isolated_recovery_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache_dir = Path(temp_dir, "embedding")
+            cache_dir.mkdir(parents=True)
+            stale_file = cache_dir / "incomplete-download"
+            stale_file.write_text("stale", encoding="utf-8")
+
+            with patch(
+                "fastembed.TextEmbedding",
+                side_effect=[
+                    ValueError(f"Could not find tokenizer_config.json in {cache_dir}"),
+                    _FakeFastEmbed(),
+                ],
+            ) as embedding_model:
+                loaded = _load_local_embedding_model(
+                    DEFAULT_LOCAL_EMBEDDING_MODEL,
+                    cache_dir=cache_dir,
+                )
+
+            self.assertIsInstance(loaded, _FakeFastEmbed)
+            self.assertTrue(stale_file.exists())
+            self.assertEqual(embedding_model.call_count, 2)
+            embedding_model.assert_called_with(
+                model_name=DEFAULT_LOCAL_EMBEDDING_MODEL,
+                cache_dir=str(cache_dir / ".recovery"),
+            )
+
     async def test_constructor_does_not_load_local_model_without_api_key(self) -> None:
         with patch(
             "app.services.nvidia_client._load_local_embedding_model",
@@ -119,13 +149,17 @@ class NvidiaClientTests(unittest.IsolatedAsyncioTestCase):
                     chat_model="meta/llama-3.2-11b-vision-instruct",
                     nvidia_api_key="",
                     expected_embedding_dimensions=1024,
+                    local_embedding_cache_dir=Path("durable-model-cache"),
                 )
 
                 self.assertIsNone(client._embed_model_local)
                 embeddings = await client.embed_texts(["hello"], input_type="passage")
 
                 self.assertEqual(len(embeddings[0]), DEFAULT_LOCAL_EMBEDDING_DIMENSIONS)
-                load_model.assert_called_once_with(DEFAULT_LOCAL_EMBEDDING_MODEL)
+                load_model.assert_called_once_with(
+                    DEFAULT_LOCAL_EMBEDDING_MODEL,
+                    cache_dir=Path("durable-model-cache"),
+                )
                 await client.aclose()
 
     def test_local_aliases_resolve_to_models_fastembed_can_load(self) -> None:

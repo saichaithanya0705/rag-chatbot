@@ -21,6 +21,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.sqlite_path, expected / "app.db")
         self.assertEqual(settings.chroma_path, expected / "chroma")
         self.assertEqual(settings.kg_path, expected / "kg.pkl")
+        self.assertEqual(settings.model_cache_dir, expected / "models" / "embedding")
 
     def test_chat_rate_limits_default_to_strict_demo_values(self) -> None:
         with patch.dict(os.environ, {}, clear=True):

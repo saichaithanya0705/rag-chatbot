@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from typing import Sequence
+from typing import Literal, Sequence
 
 import httpx
 
@@ -64,6 +64,35 @@ INTERACTIVE_GENERATE_TIMEOUT_SECONDS = 45.0
 MODEL_THINKING_SUMMARY_TIMEOUT_SECONDS = 18.0
 MODEL_THINKING_SEGMENT_CHAR_LIMIT = 2400
 LOGGER = logging.getLogger(__name__)
+GenerationFallbackReason = Literal[
+    "provider_unavailable",
+    "stream_interrupted",
+    "ungrounded_generation",
+    "ungrounded_stream",
+    "timeout",
+]
+GENERATION_FALLBACK_WARNINGS: dict[GenerationFallbackReason, str] = {
+    "provider_unavailable": (
+        "The answer provider was temporarily unavailable, so this response was composed "
+        "directly from the strongest retrieved evidence."
+    ),
+    "stream_interrupted": (
+        "The answer provider stream was interrupted, so the final response was composed "
+        "directly from the strongest retrieved evidence."
+    ),
+    "ungrounded_generation": (
+        "The model could not ground a confident generated answer, so this response was "
+        "composed directly from the strongest retrieved evidence."
+    ),
+    "ungrounded_stream": (
+        "The streamed answer could not be grounded confidently, so the final response "
+        "was composed directly from the strongest retrieved evidence."
+    ),
+    "timeout": (
+        "The model exceeded the interactive time budget, so this answer was composed "
+        "directly from the strongest retrieved evidence."
+    ),
+}
 
 
 class RagService:
@@ -177,9 +206,6 @@ class RagService:
         if thinking_enabled:
             attempt_order.append(False)
 
-        last_result: FinalizedAnswer | None = None
-        last_error: Exception | None = None
-
         for attempt_index, include_thinking in enumerate(attempt_order):
             attempt_started_at = asyncio.get_running_loop().time()
             LOGGER.info(
@@ -205,24 +231,29 @@ class RagService:
                     ),
                 )
             except Exception as error:  # noqa: BLE001
-                last_error = error
                 if include_thinking and attempt_index < len(attempt_order) - 1:
                     LOGGER.warning(
                         "Reasoning-enabled answer generation failed; retrying without thinking mode.",
                         exc_info=True,
                     )
                     continue
-                if self._is_interactive_timeout(error):
+                if self._is_interactive_timeout(error) and prepared.contexts:
                     LOGGER.warning(
                         "Interactive answer generation exceeded the time budget; falling back to retrieved evidence.",
                         exc_info=True,
                     )
-                    return fallback_finalized_answer(
+                    return self.fallback_from_contexts(
                         prepared.contexts,
-                        generation_warning=(
-                            "The model exceeded the interactive time budget, so this answer was composed "
-                            "directly from the strongest retrieved evidence."
-                        ),
+                        reason="timeout",
+                    )
+                if prepared.contexts:
+                    LOGGER.warning(
+                        "Answer generation provider failed; falling back to retrieved evidence.",
+                        exc_info=True,
+                    )
+                    return self.fallback_from_contexts(
+                        prepared.contexts,
+                        reason="provider_unavailable",
                     )
                 raise
 
@@ -255,41 +286,22 @@ class RagService:
                 asyncio.get_running_loop().time() - attempt_started_at,
                 include_thinking,
             )
-            last_result = finalized
-            if not (
-                include_thinking
-                and self.should_retry_without_thinking(
-                    finalized.answer,
-                    finalized.citations,
-                    prepared.contexts,
-                )
-            ):
-                return finalized
-
-            LOGGER.warning(
-                "Reasoning-enabled answer could not be grounded; retrying without thinking mode."
+            ungrounded = self.should_retry_without_thinking(
+                finalized.answer,
+                finalized.citations,
+                prepared.contexts,
             )
-
-        if last_result is not None:
-            if prepared.contexts and last_result.answer == ungrounded_answer_message():
-                return self._fallback_finalized_answer(
-                    prepared.contexts,
-                    generation_warning=(
-                        "The model could not ground a confident generated answer, so this response was "
-                        "composed directly from the strongest retrieved evidence."
-                    ),
+            if include_thinking and ungrounded:
+                LOGGER.warning(
+                    "Reasoning-enabled answer could not be grounded; retrying without thinking mode."
                 )
-            return last_result
-        if last_error is not None:
-            if prepared.contexts and self._is_interactive_timeout(last_error):
-                return fallback_finalized_answer(
+                continue
+            if ungrounded:
+                return self.fallback_from_contexts(
                     prepared.contexts,
-                    generation_warning=(
-                        "The model exceeded the interactive time budget, so this answer was composed "
-                        "composed directly from the strongest retrieved evidence."
-                    ),
+                    reason="ungrounded_generation",
                 )
-            raise last_error
+            return finalized
         raise RuntimeError("Answer generation ended without a result.")
 
     async def prepare_answer(
@@ -659,17 +671,25 @@ class RagService:
     ) -> FinalizedAnswer:
         answer, citations = self.finalize_answer(raw_answer, contexts)
         if contexts and not citations and answer == ungrounded_answer_message():
-            return self._fallback_finalized_answer(
+            return self.fallback_from_contexts(
                 contexts,
-                generation_warning=(
-                    "The streamed answer could not be grounded confidently, so the final response "
-                    "was composed directly from the strongest retrieved evidence."
-                ),
+                reason="ungrounded_stream",
             )
         return FinalizedAnswer(
             answer=answer,
             citations=citations,
             model_thinking=model_thinking,
+        )
+
+    @staticmethod
+    def fallback_from_contexts(
+        contexts: list[RetrievedContext],
+        *,
+        reason: GenerationFallbackReason,
+    ) -> FinalizedAnswer:
+        return fallback_finalized_answer(
+            contexts,
+            generation_warning=GENERATION_FALLBACK_WARNINGS[reason],
         )
 
     async def summarize_model_thinking(

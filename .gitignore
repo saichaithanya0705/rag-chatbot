@@ -27,6 +27,7 @@ backend/data/celery/
 # Legacy local cache from pre-OpenDataLoader checkouts; safe to delete manually.
 backend/data/docling-models/
 backend/data/logs/
+backend/data/models/
 backend/data/ocr/
 backend/data/uploads/
 backend/data/*.lock

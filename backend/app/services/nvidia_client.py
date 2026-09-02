@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+from pathlib import Path
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -65,11 +66,29 @@ def resolve_embedding_model_id(model_name: str, *, use_cloud: bool) -> str:
     ).model
 
 
-def _load_local_embedding_model(model_name: str) -> Any:
+def _load_local_embedding_model(
+    model_name: str,
+    *,
+    cache_dir: Path | None,
+) -> Any:
     os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
     from fastembed import TextEmbedding
 
-    return TextEmbedding(model_name=model_name)
+    if cache_dir is None:
+        return TextEmbedding(model_name=model_name)
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        return TextEmbedding(model_name=model_name, cache_dir=str(cache_dir))
+    except ValueError as error:
+        if "Could not find tokenizer_config.json" not in str(error):
+            raise
+        LOGGER.warning(
+            "Local embedding cache is incomplete; retrying once in an isolated recovery cache."
+        )
+        recovery_cache_dir = cache_dir / ".recovery"
+        recovery_cache_dir.mkdir(parents=True, exist_ok=True)
+        return TextEmbedding(model_name=model_name, cache_dir=str(recovery_cache_dir))
 
 
 @dataclass(frozen=True)
@@ -99,6 +118,7 @@ class NvidiaClient:
         max_embed_concurrency: int = 4,
         max_generate_concurrency: int = 4,
         max_stream_concurrency: int = 4,
+        local_embedding_cache_dir: Path | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._embed_model = embed_model.strip()
@@ -112,6 +132,7 @@ class NvidiaClient:
         )
         self._resolved_embed_model = self._embedding_runtime.model
         self._expected_embedding_dimensions = self._embedding_runtime.dimensions
+        self._local_embedding_cache_dir = local_embedding_cache_dir
 
         self._embed_model_local = None
         if not self._nvidia_api_key:
@@ -209,7 +230,10 @@ class NvidiaClient:
     def _get_local_model(self) -> Any:
         if self._embed_model_local is None:
             LOGGER.info("Lazy loading local embedding model: %s", self._resolved_embed_model)
-            self._embed_model_local = _load_local_embedding_model(self._resolved_embed_model)
+            self._embed_model_local = _load_local_embedding_model(
+                self._resolved_embed_model,
+                cache_dir=self._local_embedding_cache_dir,
+            )
         return self._embed_model_local
 
     def _validate_embedding_dimensions(self, embeddings: list[list[float]]) -> None:

@@ -18,6 +18,7 @@ class Settings:
     sqlite_path: Path
     chroma_path: Path
     kg_path: Path
+    model_cache_dir: Path
     celery_root: Path
     celery_queue_dir: Path
     celery_reply_dir: Path
@@ -95,6 +96,7 @@ def load_settings() -> Settings:
     sqlite_path = data_dir / "app.db"
     chroma_path = data_dir / "chroma"
     kg_path = data_dir / "kg.pkl"
+    model_cache_dir = _env_path("RAG_MODEL_CACHE_DIR") or (data_dir / "models" / "embedding")
     celery_root = data_dir / "celery"
     celery_queue_dir = celery_root / "queue"
     celery_reply_dir = celery_root / "reply"
@@ -109,6 +111,7 @@ def load_settings() -> Settings:
         sqlite_path=sqlite_path,
         chroma_path=chroma_path,
         kg_path=kg_path,
+        model_cache_dir=model_cache_dir,
         celery_root=celery_root,
         celery_queue_dir=celery_queue_dir,
         celery_reply_dir=celery_reply_dir,
@@ -167,6 +170,7 @@ def ensure_runtime_directories(settings: Settings) -> None:
         settings.data_dir,
         settings.uploads_dir,
         settings.chroma_path,
+        settings.model_cache_dir,
         settings.celery_root,
         settings.celery_queue_dir,
         settings.celery_reply_dir,

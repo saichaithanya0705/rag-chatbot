@@ -15,7 +15,7 @@ The repository started from the phased plan in [rag_chatbot_phases.md](./rag_cha
 At a high level, the app lets you:
 
 - upload PDFs into a local knowledge base
-- ask questions in a chat UI with streaming responses
+- ask questions in a chat UI with SSE progress and validated grounded responses
 - cite exact PDF passages and open them in a preview panel
 - organize retrieval by topic collections
 - visualize topic relationships in a knowledge graph
@@ -29,7 +29,8 @@ At a high level, the app lets you:
 
 - persistent sessions with auto-generated titles
 - grouped session list in the sidebar
-- streaming assistant replies
+- SSE progress and keepalive updates while provider output is buffered, validated, and grounded before display
+- cited evidence fallback when the answer provider times out or becomes unavailable
 - single-flight send protection while a model response is in progress
 - safe rich-text message rendering for paragraphs, lists, headings, inline code, and fenced code blocks
 - citation chips for PDF and web sources
@@ -334,6 +335,7 @@ Common environment variables:
 | `RAG_RERANKER_MODEL` | NVIDIA reranker model | `nvidia/nv-rerankqa-mistral-4b-v3` |
 | `RAG_ENABLE_CROSS_SESSION_MEMORY` | enable cross-session memory | `true` |
 | `RAG_DATA_DIR` | persistent SQLite, Chroma, graph, upload, and queue root | `backend/data` |
+| `RAG_MODEL_CACHE_DIR` | application-owned local embedding cache | `<RAG_DATA_DIR>/models/embedding` |
 | `RAG_WEB_SEARCH_BACKEND` | search backend | `duckduckgo` |
 | `RAG_WEB_SEARCH_REGION` | search region | `us-en` |
 | `RAG_WEB_SEARCH_MAX_RESULTS` | max web results | `4` |

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 import json
 import logging
 from typing import TYPE_CHECKING
@@ -14,6 +15,7 @@ from app.services.answer_trace import build_answer_trace
 
 if TYPE_CHECKING:
     from app.services.container import ServiceContainer
+    from app.services.rag_types import FinalizedAnswer, PreparedAnswer
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 KEEPALIVE_INTERVAL_SECONDS = 8.0
@@ -316,6 +318,7 @@ async def stream_chat(
                         cross_session_turn_count=cross_session_memory_used,
                         web_search_enabled=request.web_search_enabled,
                         thinking_enabled=thinking_enabled,
+                        response_length=request.response_length,
                         images=request.images,
                         user_id=user_id,
                     )
@@ -427,14 +430,12 @@ async def stream_chat(
                     )
                     return
 
-                generation_events: asyncio.Queue[str] = asyncio.Queue()
                 generation_task = asyncio.create_task(
                     _stream_finalized_answer(
                         container=container,
                         prepared=prepared,
                         thinking_enabled=thinking_enabled,
                         http_request=http_request,
-                        event_queue=generation_events,
                     )
                 )
                 yield _format_sse(
@@ -444,28 +445,10 @@ async def stream_chat(
                         "message": "Generating the grounded answer.",
                     }
                 )
-                while True:
+                async for heartbeat in _wait_with_keepalive(generation_task, stage="answering"):
                     if await http_request.is_disconnected():
                         raise asyncio.CancelledError
-                    try:
-                        event = await asyncio.wait_for(
-                            generation_events.get(),
-                            timeout=KEEPALIVE_INTERVAL_SECONDS,
-                        )
-                    except TimeoutError:
-                        if generation_task.done() and generation_events.empty():
-                            break
-                        yield _format_sse({"type": "heartbeat", "stage": "answering"})
-                        continue
-
-                    yield event
-                    while True:
-                        try:
-                            yield generation_events.get_nowait()
-                        except asyncio.QueueEmpty:
-                            break
-                    if generation_task.done() and generation_events.empty():
-                        break
+                    yield heartbeat
 
                 finalized = await generation_task
                 logger.info(
@@ -585,7 +568,7 @@ def _format_sse(payload: dict[str, object]) -> str:
     return f"data: {json.dumps(payload)}\n\n"
 
 
-async def _wait_with_keepalive(task: asyncio.Task, *, stage: str):
+async def _wait_with_keepalive(task: asyncio.Task[object], *, stage: str) -> AsyncIterator[str]:
     while True:
         done, _pending = await asyncio.wait({task}, timeout=KEEPALIVE_INTERVAL_SECONDS)
         if task in done:
@@ -596,16 +579,14 @@ async def _wait_with_keepalive(task: asyncio.Task, *, stage: str):
 async def _stream_finalized_answer(
     *,
     container: ServiceContainer,
-    prepared,
+    prepared: PreparedAnswer,
     thinking_enabled: bool,
     http_request: Request,
-    event_queue: asyncio.Queue[str],
-):
+) -> FinalizedAnswer:
     attempt_order = [thinking_enabled]
     if thinking_enabled:
         attempt_order.append(False)
 
-    last_error: Exception | None = None
     for attempt_index, include_thinking in enumerate(attempt_order):
         raw_answer_parts: list[str] = []
         thinking_parts: list[str] = []
@@ -626,7 +607,6 @@ async def _stream_finalized_answer(
                     continue
                 emitted_response = True
                 raw_answer_parts.append(delta.content)
-                await event_queue.put(_format_sse({"type": "token", "delta": delta.content}))
 
             finalized = container.rag_service.finalize_streamed_answer(
                 "".join(raw_answer_parts),
@@ -656,15 +636,21 @@ async def _stream_finalized_answer(
         except asyncio.CancelledError:
             raise
         except Exception as error:  # noqa: BLE001
-            last_error = error
             if include_thinking and not emitted_response and attempt_index < len(attempt_order) - 1:
                 logger.warning(
                     "Reasoning-enabled answer stream failed before any output; retrying without thinking mode.",
                     exc_info=True,
                 )
                 continue
+            if prepared.contexts:
+                logger.warning(
+                    "Answer stream provider failed; falling back to retrieved evidence.",
+                    exc_info=True,
+                )
+                return container.rag_service.fallback_from_contexts(
+                    prepared.contexts,
+                    reason="stream_interrupted",
+                )
             raise
 
-    if last_error is not None:
-        raise last_error
     raise RuntimeError("Streamed answer generation ended without a result.")

@@ -52,4 +52,7 @@ You can override them with environment variables:
 - `RAG_NVIDIA_CHAT_MODEL`
 - `RAG_RERANKER_MODEL`
 - `RAG_DATA_DIR`
+- `RAG_MODEL_CACHE_DIR`
 - `RAG_ALLOWED_ORIGINS`
+
+Local embedding weights are stored in the application-owned model cache. If FastEmbed detects an incomplete tokenizer snapshot there, the backend preserves it and retries once in an isolated recovery subdirectory rather than continuing with a broken shared temporary cache.

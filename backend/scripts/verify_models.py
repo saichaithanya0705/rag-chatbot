@@ -21,6 +21,7 @@ async def main() -> None:
         nvidia_base_url=settings.nvidia_base_url,
         nvidia_api_key=settings.nvidia_api_key,
         expected_embedding_dimensions=settings.embedding_dimensions,
+        local_embedding_cache_dir=settings.model_cache_dir,
     )
 
     embeddings = await client.embed_texts(["Round Robin scheduling"])
