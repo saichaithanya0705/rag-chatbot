@@ -7,7 +7,6 @@ import re
 import httpx
 
 from app.core.nvidia_retrieval import (
-    DEFAULT_RERANKER_MODEL,
     NVIDIA_HOSTED_BASE_URL,
     resolve_ranking_url,
 )

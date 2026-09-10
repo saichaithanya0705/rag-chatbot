@@ -271,3 +271,16 @@ rerun after repairs, per the completion gate.
 Current provider references:
 - https://docs.api.nvidia.com/nim/reference/nvidia-llama-nemotron-rerank-vl-1b-v2-infer
 - https://docs.nvidia.com/nemo/retriever/26.5.0/reference/retriever-cli-quickstart/
+
+## Reranker commit follow-up audit — 2026-09-10
+
+**Verdict:** 10/100, minimal scoped slop-like risk after repair; high confidence. Scope is limited to commits `a9e22d8` and `c79822c`, their provider boundary, and directly overlapping reranker tests.
+
+Graphify's 2026-08-29 report places retrieval in a low-cohesion RAG area (`RagRetrievalEngine`: 38 edges; RAG domain contracts: 0.04 cohesion). The required scanner ran once for this follow-up: 26/100 graph-only and 86/100 source-augmented triage across 231 source-like files. These repository-wide regex results selected inspection targets and are not the scoped verdict.
+
+| Evidence | Classification | Root cause | Permanent repair |
+| --- | --- | --- | --- |
+| `providers/reranker_service.py` imported `DEFAULT_RERANKER_MODEL` without using it | Confirmed maintainability signal | The shared contract import was copied as a group while only the base URL and resolver belong to the provider | Removed the dead import so configuration owns the default and the provider owns endpoint execution |
+| `test_sparse_evidence.py` repeated endpoint and response-parser cases already owned by `test_nvidia_reranker_contract.py` | Confirmed verification-ownership signal | Clean-baseline commit isolation introduced a focused contract suite without consolidating the working-tree suite | Kept provider fallback behavior in the sparse-evidence suite and moved endpoint/schema/order coverage exclusively to the focused contract suite |
+
+Healthy evidence: hosted model/endpoint matching fails before network access; custom NIM URLs remain supported; responses require complete, unique, finite indexed scores; recovery catches provider and contract failures without masking programming errors. Validation after repair: focused reranker and sparse-evidence tests passed, compileall passed, and scoped diff whitespace validation passed. Completion gate honored: the scanner was not rerun after repair.
