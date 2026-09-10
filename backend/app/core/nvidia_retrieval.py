@@ -13,8 +13,9 @@ def resolve_ranking_url(*, base_url: str, model_name: str) -> str:
     if normalized_base == NVIDIA_HOSTED_BASE_URL:
         if model_name != DEFAULT_RERANKER_MODEL:
             raise ValueError(
-                "The hosted NVIDIA reranker endpoint is only configured for "
-                f"{DEFAULT_RERANKER_MODEL!r}; received {model_name!r}. "
+                "No NVIDIA-hosted reranking endpoint is configured for "
+                f"{model_name!r}. The hosted endpoint is configured for "
+                f"{DEFAULT_RERANKER_MODEL!r}. "
                 "Set RAG_NVIDIA_BASE_URL to a compatible self-hosted NIM endpoint "
                 "when using another model."
             )
