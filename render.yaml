@@ -20,7 +20,7 @@ services:
       - key: RAG_NVIDIA_CHAT_MODEL
         value: meta/llama-3.2-11b-vision-instruct
       - key: RAG_RERANKER_MODEL
-        value: nvidia/nv-rerankqa-mistral-4b-v3
+        value: nvidia/llama-nemotron-rerank-vl-1b-v2
       - key: RAG_EMBED_MODEL
         value: nvidia/llama-nemotron-embed-1b-v2
       - key: RAG_EMBEDDING_DIMENSIONS

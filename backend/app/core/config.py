@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+
+from app.core.nvidia_retrieval import DEFAULT_RERANKER_MODEL
 from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
@@ -124,7 +126,7 @@ def load_settings() -> Settings:
         chat_model=os.getenv("RAG_NVIDIA_CHAT_MODEL", "meta/llama-3.2-11b-vision-instruct"),
         reranker_model=os.getenv(
             "RAG_RERANKER_MODEL",
-            "nvidia/nv-rerankqa-mistral-4b-v3",
+            DEFAULT_RERANKER_MODEL,
         ),
         chat_history_collection_name=os.getenv(
             "RAG_CHAT_HISTORY_COLLECTION",

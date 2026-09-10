@@ -234,3 +234,40 @@ mandatory before a deploy.
 - `npm run build` — passed; Vite reports an existing 688 KB minified workbench chunk warning.
 - `git diff --check` — passed after the audit edits.
 - Docker build remains unverified because the local Docker daemon is unavailable.
+
+
+## NVIDIA reranker integration audit — 2026-09-10
+
+**Verdict:** 12/100, minimal scoped slop-like risk after repair. Confidence: high for the
+hosted reranker boundary because official documentation, negative contract tests, the full
+backend suite, and a live authenticated request agree.
+
+The 2026-08-29 Graphify report identifies `RagRetrievalEngine` as a 38-edge core abstraction
+and the RAG communities at 0.04 cohesion, so the audit inspected configuration, endpoint
+resolution, response validation, retrieval consumption, tests, and deployment defaults.
+The required scanner ran once before source review: 26/100 graph-only and 86/100
+source-augmented triage across 228 files. Those repository-wide regex scores are not scoped
+defect verdicts.
+
+| Evidence | Classification | Root cause | Permanent repair |
+| --- | --- | --- | --- |
+| `nvidia/nv-rerankqa-mistral-4b-v3` returned 404 and NVIDIA marks its hosted endpoint deprecated | Confirmed stale-integration signal | Model lifecycle drift was encoded independently in runtime and deployment defaults | Replaced it with `nvidia/llama-nemotron-rerank-vl-1b-v2` and its model-specific hosted endpoint in one core contract |
+| Importing the shared default from the service package caused a circular `config -> services -> container -> config` dependency | Confirmed architecture signal | A provider constant crossed through a package initializer with orchestration side effects | Moved model and endpoint resolution to `app/core/nvidia_retrieval.py`; config and provider now depend inward |
+| `except Exception` converted programming errors into apparent lexical-fallback success | Confirmed broad-error-masking signal | Recovery covered implementation faults as well as provider faults | Added a typed response parser and limited recovery to HTTP, JSON-decoding, and provider-contract errors |
+| Earlier tests asserted `_ranking_url` and mocked only a happy-shaped response | Confirmed verification weakness | Internal state and mock plausibility substituted for the external contract | Added tests for endpoint/model mismatch, response shape, boolean/numeric distinctions, unique complete indexes, finite logits, and passage-order restoration |
+
+Healthy evidence: the endpoint resolver rejects unknown hosted model combinations before
+network access, custom self-hosted NIM bases retain `/ranking`, provider outputs are validated
+before retrieval decisions, and no new dependency or credential storage was introduced.
+The live request used the configured key without exposing it, did not invoke lexical fallback,
+and returned scores `[-6.203125, 5.44140625]`, ranking the relevant pancreatitis passage above
+`Hello World`.
+
+Validation: `python -m pytest -q` from `backend` passed **151 tests**; the focused provider,
+configuration, retrieval, and resilience set passed **50 tests** after the audit repair;
+`python -m compileall -q app` passed; scoped `git diff --check` passed. The scanner was not
+rerun after repairs, per the completion gate.
+
+Current provider references:
+- https://docs.api.nvidia.com/nim/reference/nvidia-llama-nemotron-rerank-vl-1b-v2-infer
+- https://docs.nvidia.com/nemo/retriever/26.5.0/reference/retriever-cli-quickstart/

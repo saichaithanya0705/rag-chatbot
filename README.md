@@ -332,7 +332,7 @@ Common environment variables:
 | `RAG_EMBED_MODEL` | cloud or local embedding model | `BAAI/bge-small-en-v1.5` |
 | `RAG_EMBEDDING_DIMENSIONS` | expected embedding vector length | `384` |
 | `RAG_NVIDIA_CHAT_MODEL` | NVIDIA chat model | `meta/llama-3.2-11b-vision-instruct` |
-| `RAG_RERANKER_MODEL` | NVIDIA reranker model | `nvidia/nv-rerankqa-mistral-4b-v3` |
+| `RAG_RERANKER_MODEL` | NVIDIA reranker model | `nvidia/llama-nemotron-rerank-vl-1b-v2` |
 | `RAG_ENABLE_CROSS_SESSION_MEMORY` | enable cross-session memory | `true` |
 | `RAG_DATA_DIR` | persistent SQLite, Chroma, graph, upload, and queue root | `backend/data` |
 | `RAG_MODEL_CACHE_DIR` | application-owned local embedding cache | `<RAG_DATA_DIR>/models/embedding` |
