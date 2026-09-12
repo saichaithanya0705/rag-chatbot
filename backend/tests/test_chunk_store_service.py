@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.chunk_store_service import ChunkStoreService
+from app.services.documents.chunk_store_service import ChunkStoreService
 
 
 class _FakeCollection:

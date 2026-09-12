@@ -53,6 +53,9 @@ interface GraphCanvasProps {
   onResetView: () => void;
   onAnimateCameraTo: (x: number, y: number, z: number) => void;
   visibleEdges: KnowledgeGraphEdge[];
+  viewMode?: "3d" | "2d";
+  onViewModeChange?: (mode: "3d" | "2d") => void;
+  onOpenGuide?: () => void;
 }
 
 export function GraphCanvas({
@@ -82,9 +85,72 @@ export function GraphCanvas({
   onResetView,
   onAnimateCameraTo,
   visibleEdges,
+  viewMode,
+  onViewModeChange,
+  onOpenGuide,
 }: GraphCanvasProps) {
   return (
     <section aria-label="Knowledge graph canvas" className={styles.canvasPanel} ref={containerRef}>
+      {viewMode && onViewModeChange && (
+        <div style={{ position: "absolute", top: 16, left: 16, zIndex: 10, display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ display: "inline-flex", background: "rgba(15, 23, 42, 0.88)", padding: 3, borderRadius: 9999, border: "1px solid rgba(255, 255, 255, 0.12)", backdropFilter: "blur(12px)" }}>
+            <button
+              type="button"
+              onClick={() => onViewModeChange("3d")}
+              style={{
+                padding: "4px 10px",
+                borderRadius: 9999,
+                border: "none",
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: "pointer",
+                background: viewMode === "3d" ? "#6366f1" : "transparent",
+                color: viewMode === "3d" ? "#fff" : "#94a3b8",
+                transition: "all 150ms ease",
+              }}
+            >
+              🪐 3D
+            </button>
+            <button
+              type="button"
+              onClick={() => onViewModeChange("2d")}
+              style={{
+                padding: "4px 10px",
+                borderRadius: 9999,
+                border: "none",
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: "pointer",
+                background: viewMode === "2d" ? "#6366f1" : "transparent",
+                color: viewMode === "2d" ? "#fff" : "#94a3b8",
+                transition: "all 150ms ease",
+              }}
+            >
+              🗺️ 2D
+            </button>
+          </div>
+          {onOpenGuide && (
+            <button
+              type="button"
+              onClick={onOpenGuide}
+              style={{
+                padding: "5px 12px",
+                borderRadius: 9999,
+                border: "1px solid rgba(168, 85, 247, 0.4)",
+                background: "rgba(15, 23, 42, 0.88)",
+                color: "#e0e7ff",
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: "pointer",
+                backdropFilter: "blur(12px)",
+              }}
+            >
+              💡 Guide
+            </button>
+          )}
+        </div>
+      )}
+
       {layout ? (
         <svg
           aria-label="Knowledge graph topic map"

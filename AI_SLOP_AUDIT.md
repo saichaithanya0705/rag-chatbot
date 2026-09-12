@@ -1,5 +1,166 @@
 # AI-Slop Audit — OpenDataLoader Migration
 
+## Addendum — Render Ingestion Runtime Contract (2026-09-06)
+
+**Scope:** The Render embedding configuration changed during the live ingestion repair,
+the directly connected ingestion dispatcher and optional Celery boundary, deployment
+documentation, and focused deployment tests. Existing unrelated worktree changes were
+preserved. The repository has no `docs/` tree, so this root report remains the required
+audit location.
+
+### Verdict
+
+**Score: 7/100 — Minimal slop risk after repair**
+**Confidence: High for the scoped ingestion and deployment surface**
+
+### Why
+
+- Graphify identifies a three-node Celery worker-supervision community, an extracted
+  ingestion-to-index flow, and a separate embedding-compatibility community; those were the
+  bounded inspection targets.
+- The required scanner reported 26/100 graph-only and 86/100 source-augmented repository-wide
+  triage risk. Pattern hits outside the ingestion/deployment change were not promoted without
+  source evidence.
+- A live disposable-PDF test proved that the ingestion runner reached parsing and chunking,
+  then failed five embedding attempts with HTTP 410 because the configured hosted NVIDIA
+  model had been retired.
+- After the model migration, the same test reached `indexed`, and a live retrieval query
+  returned the expected answer with a PDF citation.
+
+### Evidence
+
+| Signal | Graph evidence | Source evidence | Classification | Root cause | Permanent fix | Prevention gate |
+|---|---|---|---|---|---|---|
+| Render used a retired hosted embedding model | Embedding compatibility and ingestion-to-index are connected graph flows | `render.yaml` configured `nvidia/llama-nemotron-embed-1b-v2`; Render logs recorded five `410 Gone` responses from `/v1/embeddings` | Confirmed stale-integration slop signal — fixed | Deployment configuration encoded an external model identifier without a release-time provider contract check | Render now uses supported `nvidia/nemotron-3-embed-1b` with its 2048-dimensional contract; the checked-in manifest matches | `test_render_manifest.py` rejects the retired model and dimension drift; live upload-to-retrieval remains the release smoke test |
+| Documentation claimed every upload required a separate Celery process | Graphify separates Celery supervision from the active ingestion dispatcher | `IngestionDispatcher.mode` returns `local` for the default filesystem configuration, `main.py` starts that runner, and production health reported `ingestionMode: local` | Confirmed review-artifact mismatch — fixed | Documentation described an older process model after ingestion ownership moved into the dispatcher | README now documents automatic local ingestion and limits separate Celery workers to externally brokered deployments | Review docs against `/api/system/health` and dispatcher tests when changing queue topology |
+| Orphaned Celery subprocess supervisor remained in product code | Celery worker supervision is an isolated three-node community | Repository search found `CeleryWorkerSupervisor` only in its own module and the historical audit report; no application or test call site existed | Confirmed dead-indirection signal — fixed | A superseded local-worker mechanism remained after the in-process dispatcher became canonical | Removed the unused subprocess supervisor; the explicit worker script remains the single optional Celery entry point | Reject service classes with no runtime owner or behavior-level call-site test |
+
+### Healthy Signals
+
+- The live test exercised the actual Render instance and NVIDIA endpoint instead of mocking
+  the queue or embedding client.
+- The dispatcher exposes its active mode through system health and fails document status
+  explicitly when ingestion fails.
+- Test data was isolated by user id and deleted after both failure and success verification.
+
+### Workflow Gaps
+
+- The current Render service is a manually configured Free web service without a persistent
+  disk, while `render.yaml` describes the durable paid-service target. Provider settings and
+  the checked-in Blueprint can drift because no release gate compares them.
+- Free-instance local SQLite, Chroma, and uploads remain ephemeral across restarts and idle
+  spin-down. Resolving that limitation requires a paid disk or migration to shared external
+  storage, not an additional Celery process.
+- No checked-in CI workflow runs the deployment manifest contract test automatically.
+
+### Permanent Fixes Applied
+
+- Replaced the retired hosted embedding model in Render and the checked-in manifest.
+- Corrected the ingestion documentation to match the active local dispatcher and the real
+  requirements for distributed Celery.
+- Removed the orphaned worker-supervisor abstraction and added manifest contract tests for
+  model compatibility, readiness, and durable-storage intent.
+
+### Anti-Slop Gates
+
+- Run the manifest tests and a real upload-to-indexed-to-cited-query smoke before promoting
+  any embedding model change.
+- Compare the live Render service plan, health path, storage, model, and dimensions with the
+  checked-in deployment contract before calling a release production-ready.
+
+### Validation
+
+- Read `graphify-out/GRAPH_REPORT.md` first (1,459 nodes, 2,666 edges, 24% inferred edges).
+- Ran `graphify_slop_scan.py` once before source review: graph-only 26/100 and
+  source-augmented 86/100 triage; it was not rerun after repairs, per the completion gate.
+- Live Render deploy `dep-daegvbmq1p3s7399t0hg` reached `live` with
+  `nvidia/nemotron-3-embed-1b` and 2048 dimensions.
+- Live PDF smoke: `202 queued` to `indexed`, one page, one chunk; cited retrieval returned
+  the expected answer with one PDF citation; the disposable document and fixture were removed.
+- Full backend suite: 122 passed with one third-party deprecation warning; Python compilation
+  across `app`, `tests`, and `scripts` passed.
+- `render.yaml` parsing and `git diff --check` passed; post-deploy Render error logs were empty.
+
+## Addendum — Netlify Production API Contract (2026-09-06)
+
+**Scope:** Deployment configuration changed during the Netlify release, the shared frontend
+API-base boundary, the PDF preview consumer, and focused build-contract tests. Existing
+backend worktree changes were preserved and excluded from this repair. The repository has
+no `docs/` tree, so this root report remains the required audit location.
+
+### Verdict
+
+**Score: 5/100 — Minimal slop risk after repair**
+**Confidence: High for the scoped deployment surface**
+
+### Why
+
+- Graphify identifies frontend HTTP access as a small, distinct community; the deployment
+  change did not add a service layer or broaden the high-centrality RAG boundaries.
+- The required scanner reported 26/100 graph-only and 86/100 source-augmented repository-wide
+  triage risk. Its backend-heavy pattern hits were outside this narrow change and were not
+  promoted to findings without source evidence.
+- A real Netlify preview exposed the confirmed defect: a production bundle built without
+  `VITE_API_BASE_URL` successfully embedded `http://localhost:8000`.
+- The build now fails closed for missing, malformed, non-HTTP(S), or loopback production API
+  URLs, while development retains an explicit local default.
+
+### Evidence
+
+| Signal | Graph evidence | Source evidence | Classification | Root cause | Permanent fix | Prevention gate |
+|---|---|---|---|---|---|---|
+| A production build silently targeted localhost when its API environment variable was absent | `Frontend HTTP client` is a distinct ten-node community; the frontend interaction community has low graph cohesion and was treated as an inspection target | `frontend/src/shared/api/httpWorkbench.ts` had an unconditional localhost fallback; the first Netlify preview bundle contained `http://localhost:8000` | Confirmed deployment-contract slop signal — fixed | Development fallback and production configuration shared one unchecked runtime expression, so a plausible build could be operationally unusable | `frontend/vite.config.ts` now validates the production API URL before compilation; `netlify.toml` declares the public Render URL | Keep negative build tests for absent, malformed, and loopback values |
+| API-base resolution was duplicated with conflicting fallbacks | The HTTP client community is directly connected to frontend workflows; no graph evidence justified separate policies | `httpWorkbench.ts` used localhost while `PdfViewerPanel.tsx` used `window.location.origin` for the same backend origin | Confirmed local-consistency signal — fixed | Two consumers independently guessed deployment behavior | `frontend/src/shared/api/apiBaseUrl.ts` owns normalization and the development default; both consumers import it | Search for direct `VITE_API_BASE_URL` reads during frontend review |
+| Netlify CLI linkage created local provider state | No product-code graph impact | `.netlify/state.json` is local account/site state; `.gitignore` now excludes `.netlify` | Benign, governed tooling state | The CLI needs a local link to target the existing site | Keep the generated state untracked while preserving the explicit project configuration in `netlify.toml` | `git status` must never show `.netlify/state.json` |
+
+### Healthy Signals
+
+- The API URL is public deployment configuration rather than a committed credential.
+- The validator runs at the build boundary before artifacts or provider side effects exist.
+- Tests prove both rejection paths and the accepted public HTTPS configuration.
+- Netlify preview and production checks inspect the emitted JavaScript and CORS response,
+  rather than treating a successful CLI exit as deployment proof.
+
+### Workflow Gaps
+
+- No checked-in CI workflow currently enforces the frontend build-contract tests and
+  production build before deployment.
+- The existing Vite workbench chunk remains about 694 kB minified and emits the existing
+  chunk-size warning; this audit found no evidence that the deployment edits caused it.
+
+### Likely Root Cause
+
+- A development convenience default crossed the production artifact boundary because the
+  build had no environment-specific validation and two consumers resolved the URL separately.
+
+### Permanent Fixes Applied
+
+- Added fail-closed production URL validation to Vite configuration.
+- Centralized frontend API-base normalization and removed the PDF viewer's conflicting fallback.
+- Declared the Render origin in Netlify build configuration and documented the production
+  build requirement.
+
+### Anti-Slop Gates
+
+- Run `npm run test:deployment-config`, `npm run typecheck`, and a production build with an
+  explicit public API URL before every frontend deploy.
+- Verify the emitted production expression binds to the intended backend origin, then confirm
+  browser requests target that origin and never target a loopback host before promotion.
+
+### Validation
+
+- Read `graphify-out/GRAPH_REPORT.md` first (1,459 nodes, 2,666 edges, 24% inferred edges).
+- Ran `graphify_slop_scan.py` once before source review: graph-only 26/100 and
+  source-augmented 86/100 triage; it was not rerun after repairs, per the completion gate.
+- Negative production build without `VITE_API_BASE_URL`: failed with the expected required-value error.
+- Deployment-config tests: 3 passed; message-markdown tests: 3 passed.
+- Production build with the Render URL and `npm run typecheck`: passed; the existing chunk-size
+  warning remains.
+- Playwright preview and production checks rendered the chat workbench and recorded seven
+  Render API requests, all HTTP 200, with no browser errors or warnings.
+- Audited Netlify production deploy: `6a9cf67b55b3f5eeea485d90` (`ready`).
+- Backend suite run earlier in the deployment task: 120 passed.
+
 ## Addendum — Parser and Chat Reliability (2026-09-01)
 
 **Scope:** Changes made to repair the OpenDataLoader-to-index pipeline, local embedding
@@ -236,6 +397,57 @@ mandatory before a deploy.
 - Docker build remains unverified because the local Docker daemon is unavailable.
 
 
+## Scoped chat reliability audit — 2026-09-09
+
+### Verdict and scope
+
+**Low slop-like risk, 22/100; medium confidence.** This is a scoped engineering judgment, not an authorship detector or a whole-repository certification.
+Scope: retrieval, deterministic fallback, reranker protocol validation, streaming call-site wiring, and tests changed in this task. Existing staged migrations and concurrent frontend changes were preserved.
+Rubric residuals: structure 3/20, maintainability 4/20, verification 5/20, security/dependencies 2/15, workflow 5/15, documentation 3/10.
+
+Graphify (2026-08-29) predates the service-directory moves: RagService has 40 edges and RagRetrievalEngine 38; RAG answer-generation and domain-contract communities have cohesion 0.04. These directed source inspection, not deletion decisions.
+The bundled scanner ran once: graph-only 26/100, source-augmented 86/100, 226 source-like files, 114 isolated nodes, 12 thin communities, 24% inferred edges. Whole-repository regex signals are not confirmed scoped findings; tool_call schema fields, for example, do not by themselves demonstrate excessive tool authority.
+
+### Evidence and permanent repairs
+
+| Signal | Source evidence | Classification / root cause | Repair and prevention |
+|---|---|---|---|
+| Dead reranking policy indirection | rag_retrieval_policy.should_rerank_candidates returned only bool(candidates), ignoring question and top_k; rag_retrieval._rank_candidates checked the same list twice | Confirmed maintainability signal in the graph's retrieval policy boundary: an obsolete optimization API survived its removal | Removed helper, exports, import and helper-only tests; the engine owns the empty-pool guard; test_sparse_evidence.py:113 checks actual filtering when all candidates belong to one document |
+| Weak deterministic evidence gate | rag_grounding.py:115 accepted 50% query-term overlap, allowing acute appendicitis for acute pancreatitis | Confirmed reliability signal: shared vocabulary was mistaken for sufficient question relevance | Require 70% distinctive-term coverage; preserve short matching Q&A and sentence extraction; test_sparse_evidence.py:107 rejects the concrete counterexample |
+| Citation and transport divergence | rag_service.py:692 and routers/chat.py streamed finalization | Healthy repaired boundary | Question is required for fallback, deterministic output uses normal citation finalization, and interrupted-stream regression asserts abstention and zero citations for Hello World |
+| Unvalidated provider protocol | providers/reranker_service.py ranking parser | Confirmed reliability defect repaired in the task | Validate complete unique indices and finite scores; invalid provider responses use bounded lexical scoring; tests cover missing, duplicate, out-of-range and NaN results |
+| Assumed ranking endpoint | providers/reranker_service.py:23 | Integration limitation, not a verified hosted success | Use NVIDIA's documented hosted retrieval endpoint while preserving custom NIM /ranking URLs; live account/function 404 remains explicitly reported |
+
+### Design decisions and limits
+
+Relevance is checked even for a single candidate; rank dominance cannot establish relevance. Invalid/nonpositive scored candidates are excluded, and missing/nonfinite/weak relevance requests web search when enabled. Lowering thresholds or copying the first chunk was rejected because it reproduces unrelated answers.
+The deterministic selector intentionally sacrifices some lexical recall; the existing semantic extractor remains available for paraphrases. This is a conservative evidence heuristic, not proof of medical correctness, entailment, or universal answer coverage. A future calibrated relevance evaluator is valid but adds model latency and evaluation requirements.
+No new agents, external actions, credentials, dependencies, or broad repository refactors were introduced by this audit. Unit tests mock network boundaries; live evidence is reported separately rather than inferred from mocks.
+
+### Live evidence and residual risks
+
+- Original question, web disabled: live API returned insufficient PDF evidence and no citations.
+- Original question, web enabled: live SSE returned an on-topic answer with a web citation, not test.pdf; the query reached web search.
+- Hosted NVIDIA reranking was unavailable with the deprecated Mistral model; the follow-up audit below records the verified replacement.
+- Source hydration received 403 for some pages; do not interpret the existing web trace wording as proof every cited page was fully fetched.
+- Startup also logged an existing HDBSCAN NameError in topic clustering; this is recorded separately from the scoped repairs, and readiness alone does not certify clustering.
+- Graph data is stale and the checkout includes concurrent work; the audit does not certify unrelated frontend, deployment, or ingestion changes.
+
+Deprecated provider reference: https://build.nvidia.com/nvidia/nv-rerankqa-mistral-4b-v3/experience
+
+### Validation and completion gate
+
+The scanner was run once before source repairs and will not be rerun for report/code changes. Full backend pytest and scoped whitespace checks are recorded below after completion. Regression coverage includes small relevant evidence, unrelated evidence, shared-word counterexamples, invalid scores, malformed provider responses, dominant-document ranking, and interrupted streaming.
+
+
+Completion recorded 2026-09-10:
+- `python -m pytest -q` from backend: **144 passed**, one dependency deprecation warning, after the scoped repairs.
+- `python -m compileall -q app/services/rag app/services/providers/reranker_service.py app/routers/chat.py`: passed.
+- `git diff --check` restricted to changed RAG/provider/test files: passed.
+- Two redundant policy-only tests were replaced with behavioral regressions; the unchanged total count does not mean no new coverage.
+- Confirmed scoped defects are repaired; residual provider availability and existing topic-clustering issues remain documented above.
+- Completion gate honored: no second scanner run and no audit restart triggered by these report edits.
+
 ## NVIDIA reranker integration audit — 2026-09-10
 
 **Verdict:** 12/100, minimal scoped slop-like risk after repair. Confidence: high for the
@@ -272,6 +484,136 @@ Current provider references:
 - https://docs.api.nvidia.com/nim/reference/nvidia-llama-nemotron-rerank-vl-1b-v2-infer
 - https://docs.nvidia.com/nemo/retriever/26.5.0/reference/retriever-cli-quickstart/
 
+
+## Addendum - 3D knowledge graph UI audit (2026-09-10)
+
+**Scope:** Changes made in this conversation to Graph3DCanvas, KnowledgeGraphExplorer,
+GraphGuideModal, and the 3D stylesheet, plus directly connected camera/resource ownership.
+The pre-existing dirty backend, graph model, manifests, and other UI changes were preserved.
+This is a bounded audit, not a whole-repository approval. The root report is retained because
+`docs/audits/ai-slop` does not exist.
+
+**Verdict:** 18/100, minimal scoped slop-like risk after repairs; medium confidence.
+Breakdown: structure 2/20, maintainability 3/20, verification 7/20, security/dependencies 1/15,
+workflow 3/15, documentation 2/10. Remaining risk reflects incomplete live integration and
+interaction coverage, not evidence that unrelated code is defective. AI provenance for this
+turn is directly observable; pre-existing code authorship is not inferred.
+
+### Evidence and permanent repairs
+
+| Finding | Source evidence and consequence | Repair and validation |
+| --- | --- | --- |
+| P2: Selection resets camera | KnowledgeGraphExplorer included selectedNodeId in visibleGraph dependencies even with hop filtering disabled; that created a new layout and triggered Graph3DCanvas's fit effect. | Derive neighborhoodRootId only when hop filtering is enabled, preserving layout identity during ordinary selection. Source dependency trace reviewed; browser selection persistence after this repair remains unverified. |
+| P2: Fit calculation can be clamped before the graph fits | The fit formula inflated the maximum dimension by inverse aspect, while OrbitControls capped distance at 2400. Narrow viewports could require a greater distance. | Shared graphFitDistance uses horizontal and vertical FOV separately, includes depth and sphere padding, and the caller expands camera far plane and control limits. Real Three.js projection tests verify every bounding corner at four aspect ratios, including 0.2. |
+| P2: Duplicated resource disposal policies | Scene unmount and graph replacement used separate disposal implementations; one handled mesh maps while the other only released sprite maps. | One graph-owned resource disposer handles meshes, sprites, shared geometry/materials/textures. A real Three.js dispose-event test verifies each shared resource is released once. References are cleared on unmount. |
+| P3: Overlay events reach scene interactions | Double-click and hover handlers on the container accepted overlay targets as graph coordinates. | Restrict picking to renderer canvas, suppress hover during dragging, and retain HUD propagation boundaries. Source review completed. |
+| P3: Stale presentation contract | Old unused mostConnectedNodeConnections prop, deleted-starfield commentary, and unused monochrome legend CSS remained after color semantics changed. | Removed dead prop/call site, commentary, and unused legend styles; guide now describes the actual topic categories. TypeScript/build pass. |
+
+### Approach and trade-offs
+
+The original issue was incomplete ownership separation between selection, layout, camera,
+and graphics resources. The repair retains the existing renderer and exposes only fit/export
+controls to its parent. A small scene utility owns reusable graphics calculations and disposal;
+it introduces no registry, factory, or alternate renderer. This allows tests against actual
+Three.js objects rather than mocks that merely repeat implementation calls. Timer-based camera
+resets and blanket exception suppression were rejected because neither repairs dependency or
+resource ownership. A fully separate scene controller is a valid future option if renderer
+complexity grows, but is not needed for these bounded fixes. The existing WebGL initialization
+fallback is restricted to renderer creation; actual unsupported-device behavior is unverified.
+
+### Graph triage and limits
+
+Read graphify-out/GRAPH_REPORT.md first. Its 2026-08-29 snapshot predates this renderer;
+frontend interaction controls (cohesion 0.03), workbench workflows, and the normalization-to-
+visualization flow guided source inspection. Backend god nodes were not expanded into scope.
+The bundled graphify_slop_scan.py ran exactly once: graph-only 26/100 and source-augmented
+86/100 across 228 source-like files, with 24% inferred graph edges. These repository-wide
+heuristics are not the scoped verdict and do not prove the new 3D code is represented.
+
+### Validation and remaining gates
+
+- `npx tsx --test tests/graph-3d-scene.test.ts`: 3/3 passed; real projection and disposal tests.
+- `npm run build`: passed with an environment-only `VITE_API_BASE_URL=https://example.com/api`;
+  this is compile validation, not a deployable API configuration. Existing large-chunk warning remains.
+- Earlier browser fixture: actual WebGL rendered; labels toggled and empty state appeared;
+  screenshot inspected. This did not verify the live backend, downloaded PNG contents, touch,
+  mobile gestures, WebGL failure, or full orbit/focus behavior. No post-repair browser claim is made.
+- Existing `tests/knowledge-graph-model.test.ts`: 2/3 passed in the implementation pass;
+  the unchanged model excludes one-link topics from mostConnectedNode, contrary to its test.
+  That prior user change and assertion were preserved; the complete suite is not claimed green.
+- Targeted diff whitespace validation passed. Temporary browser fixture and owned dev server
+  were removed/stopped in the implementation pass; no deployment or commit was performed.
+- Prevention: keep camera fit and disposal tests; verify selection preserves camera pose and
+  exported PNG contents in future browser regression coverage.
+
+**Completion gate:** Confirmed findings in the edited scope have been repaired. Do not rerun
+scanner triage solely because these fixes or this report changed repository state.
+
+## RAG evaluation and grounding audit — 2026-09-12
+
+**Scope:** The newly added `backend/quality_evals` suite, its regression dataset and tests,
+the directly connected RAG finalization/prompt boundaries, and root README documentation.
+Concurrent service-package, frontend, deployment, and unrelated dirty-worktree changes were
+preserved and not treated as defects. The root report remains authoritative because
+`docs/audits/ai-slop` does not exist.
+
+**Verdict:** 14/100, minimal scoped slop-like risk after repair. Confidence: high for the
+deterministic regression path; medium for live-model semantic quality because this audit did
+not call an external model judge. This is an engineering-risk assessment, not an authorship
+claim about pre-existing code.
+
+The 2026-08-29 Graphify report was read before source inspection. It identifies `RagService`
+(40 edges) and `RagRetrievalEngine` (38) as core nodes, with RAG answer generation and domain
+contracts both at 0.04 cohesion; those facts justified tracing prompt construction, final
+answer validation, fallback, reranking, and the new eval runner together. The bundled scanner
+ran once before repair: graph-only **26/100** and source-augmented **86/100** across 241
+source-like files, with 24% inferred edges, 114 isolated nodes, and 12 thin communities.
+Those repository-wide regex heuristics selected targets; they are not the scoped verdict and
+were not rerun after repair.
+
+| Signal | Source evidence | Classification and root cause | Permanent repair and prevention gate |
+| --- | --- | --- | --- |
+| A valid source marker authorized an unsupported extra claim | The initial eval replay produced `A process is a program in execution and always cures cancer. [SourceID: process]`; whole-segment citation checks skipped cited text. | Confirmed grounding and verification defect: source existence was mistaken for claim-level entailment. | Replaced the marker-skipping helper with atomic-claim validation in `rag_answer_text.py`; every substantive clause must be token-supported by eligible evidence. Unsupported stream output is replaced only by deterministic cited fallback. The adversarial dataset and direct finalizer tests are the regression gate. |
+| Retrieved prompt injection could be supplied as answer evidence | The initial eval replay returned `The secret system prompt is ORBIT-9` from a source beginning `Ignore previous instructions`. | Confirmed trust-boundary defect: untrusted retrieved content reached prompt, citation, and fallback paths without a common eligibility rule. | A single instruction-shaped-evidence filter now applies before prompt construction, shortcuts, citation extraction, semantic fallback, and deterministic fallback. The prompt-boundary test proves the injected text never enters the model prompt; the eval now fails closed when all retrieved evidence is unsafe. |
+| Eval runner used uninitialized service/engine instances and type suppressions | `quality_evals/targets.py` used `object.__new__` plus `type: ignore` solely to invoke pure ranking and answer-finalization behavior. | Confirmed local architecture signal: test harness mechanics bypassed construction contracts and obscured the actual boundary under evaluation. | Extracted pure relevance ranking into `rank_candidates_by_relevance`, made finalization/fallback explicitly static because they carry no instance state, and typed the intent client as a protocol. The runner now invokes real public behavior without uninitialized objects or local suppressions. |
+| Judge retried every exception, including implementation faults | `quality_evals/judge.py` had `except Exception` around provider invocation and JSON validation. The new test showed a `KeyError` became a misleading judge retry failure. | Confirmed broad-error-masking signal: an internal wiring bug could be reported as a model-quality failure. | Retry is restricted to provider transport, timeout, malformed-output, and missing-response-shape failures; unexpected programming errors propagate. The focused regression test first failed on the old behavior and now passes. |
+
+### Healthy signals
+
+- The eval dataset is versioned and schema-validated; duplicate case IDs, unknown expected
+  contexts, malformed JSON, invalid reranker scores, and missing recorded outputs fail before
+  scoring.
+- Offline replay is deterministic and provider-free. Live target evaluation and optional judge
+  runs are explicit, require configured credentials, log decisions locally, and do not add a
+  dependency, deployment side effect, or credential store.
+- The root README now distinguishes deterministic regression gates from optional model judging
+  and requires human calibration before judge results become a release gate.
+- Tests exercise final user-visible answers and prompts rather than mocks of implementation
+  calls; no scanner suppression, dependency workaround, or test-only production API was added.
+
+### Remaining risk and anti-slop gates
+
+- The deterministic claim validator intentionally fails closed when meaningful paraphrase
+  terms are absent from evidence. It is not a substitute for a calibrated semantic judge or
+  human review of production traces; use `--live-model --judge` only with a separate judge
+  model and human-labeled calibration set.
+- The instruction-pattern filter is conservative. Documents that discuss attack strings as
+  examples may need a future provenance-aware safe quoting design; do not weaken the current
+  boundary by treating raw retrieved instructions as trusted evidence.
+- Keep `python -m pytest -q` and `python -m quality_evals.run` as separate CI gates. Add a
+  reviewed, anonymized failure case for each production regression and retain a held-out set
+  when prompts or models are selected.
+
+### Validation
+
+- Focused RAG, prompt, retrieval, fallback, resilience, and evaluation suite: **55 passed**,
+  with one pre-existing `pytest-asyncio` configuration warning.
+- Full backend suite from `backend`: **167 passed**, with one pre-existing `pytest-asyncio`
+  configuration warning. No external provider or deployment claim is made by this audit.
+- Offline evaluation: **19/19 passed**, all configured quality gates at 1.0.
+- `python -m compileall -q app quality_evals ...` and scoped `git diff --check` passed during
+  repair. The scanner was not rerun after code or report edits, honoring the completion gate.
+
 ## Reranker commit follow-up audit — 2026-09-10
 
 **Verdict:** 10/100, minimal scoped slop-like risk after repair; high confidence. Scope is limited to commits `a9e22d8` and `c79822c`, their provider boundary, and directly overlapping reranker tests.
@@ -284,3 +626,54 @@ Graphify's 2026-08-29 report places retrieval in a low-cohesion RAG area (`RagRe
 | `test_sparse_evidence.py` repeated endpoint and response-parser cases already owned by `test_nvidia_reranker_contract.py` | Confirmed verification-ownership signal | Clean-baseline commit isolation introduced a focused contract suite without consolidating the working-tree suite | Kept provider fallback behavior in the sparse-evidence suite and moved endpoint/schema/order coverage exclusively to the focused contract suite |
 
 Healthy evidence: hosted model/endpoint matching fails before network access; custom NIM URLs remain supported; responses require complete, unique, finite indexed scores; recovery catches provider and contract failures without masking programming errors. Validation after repair: focused reranker and sparse-evidence tests passed, compileall passed, and scoped diff whitespace validation passed. Completion gate honored: the scanner was not rerun after repair.
+
+## Service-package compatibility audit — 2026-09-11
+
+**Scope:** The service-package compatibility boundary changed in this prompt, its new
+regression test, and the directly connected `ServiceContainer` to `RagService` extractive-
+fallback injection path. Existing backend, frontend, deployment, and audit edits remain out
+of scope and were preserved. The root report remains authoritative because
+`docs/audits/ai-slop` does not exist.
+
+**Verdict:** 11/100, minimal scoped slop-like risk after repair; high confidence for local
+imports and fallback wiring. Breakdown: structural health 2/20, maintainability 2/20,
+verification 2/20, security/dependencies 0/15, workflow controls 4/15, documentation and
+provenance 1/10. AI provenance is known only for this prompt's edits; no authorship inference
+is made about existing code.
+
+The 2026-08-29 Graphify snapshot identifies `ServiceContainer` (26 edges), `build_container`
+(25), and `RagService` (40) as central orchestration nodes, while application service
+orchestration and RAG answer generation both have low cohesion. It therefore justified
+checking package import side effects, compatibility behavior, constructor injection, and
+provider-failure fallback together. The bundled scanner ran once before repair: 26/100
+graph-only and 86/100 source-augmented triage across 232 source-like files, with 24% inferred
+edges, 114 isolated nodes, and 12 thin communities. Those repository-wide heuristics selected
+targets; they are not the scoped verdict.
+
+| Evidence | Classification | Root cause | Permanent repair and prevention gate |
+| --- | --- | --- | --- |
+| `app.services` eagerly imported `container` and all 41 canonical targets merely to register old module names | Confirmed indirection and import-coupling signal | Compatibility was implemented as eager runtime wiring, turning the package initializer into a whole-service-graph loader | A standards-compliant lazy finder now creates forwarding compatibility modules and imports only the requested canonical module; a fresh-process assertion prevents root-import regression |
+| The first migration test used eight `type: ignore` suppressions and asserted `_extractive_fallback_service` directly | Confirmed verification-debt signal | The test mirrored constructor storage instead of proving the user-visible fallback contract | Replaced it with typed-spec collaborators and a behavioral provider-failure fallback assertion covering invocation, grounded answer, and citation |
+| The original compatibility finder imported and mutated `sys.modules` inside `find_spec`, then returned the canonical module's differently named spec | Confirmed non-idiomatic import signal | Module discovery and module execution were conflated to retain identity | `find_spec` now only returns a spec for the requested legacy name; the loader owns canonical import and symbol forwarding, and tests verify legacy `__name__`, spec name, and canonical exported-symbol identity |
+| `build_container` creates one configured `ExtractiveFallbackService` and injects it into `RagService`; fallback output still passes normal grounding/citation finalization | Healthy architecture signal | The container is a deliberate composition root and the RAG service owns fallback policy | Retained without another service locator or wrapper; focused sync, stream, sparse-evidence, grounding, retrieval-policy, and constructor-boundary tests remain the gate |
+
+### Aggressive review targets and residual risk
+
+- The Graphify snapshot predates this package split, so its inferred package relationships are
+  navigation evidence rather than current structural proof.
+- Compatibility modules preserve import specs and exported object identity, but deliberately do
+  not promise that assigning arbitrary attributes on a legacy module mutates the canonical
+  module. Remove the compatibility map after a documented deprecation window rather than
+  expanding it into a permanent plugin system.
+- The existing global `pytest-asyncio` loop-scope deprecation warning is outside this scoped
+  change; it remains visible rather than being suppressed.
+
+### Validation
+
+- Fresh-process import check: root package stayed lazy; legacy `rag_service` name/spec and
+  canonical `RagService` symbol forwarding passed.
+- Focused backend suite from `backend`: **69 passed**, one existing dependency warning.
+- `python -m compileall -q app tests scripts`: passed.
+- No dependency, provider, credential, deployment, or unrelated application behavior changed.
+- Completion gate honored: the scanner was not rerun after repairs and this report update did
+  not restart the audit.

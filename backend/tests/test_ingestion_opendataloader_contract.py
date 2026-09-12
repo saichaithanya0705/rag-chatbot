@@ -4,8 +4,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from app.services.document_parser import ParsedBlock, ParsedDocument, ParsedPage
-from app.services.ingestion_service import IngestionService
+from app.services.ingestion.document_parser import ParsedBlock, ParsedDocument, ParsedPage
+from app.services.ingestion.ingestion_service import IngestionService
 
 
 class _FakeDocumentParser:

@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import unittest
 
-from app.services.rag_comparison import (
+from app.services.rag.rag_comparison import (
     comparison_match_tokens,
     comparison_question_score,
     comparison_search_query,
     comparison_subqueries,
     comparison_token_variants,
 )
-from app.services.rag_types import CandidateChunk
+from app.services.rag.rag_types import CandidateChunk
 
 
 class RagComparisonTests(unittest.TestCase):

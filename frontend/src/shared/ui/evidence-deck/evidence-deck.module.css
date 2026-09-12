@@ -1,10 +1,10 @@
 .deckContainer {
-  margin-top: 14px;
+  margin-top: 10px;
   border-top: 1px dashed var(--border-strong);
-  padding-top: 12px;
+  padding-top: 8px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   width: 100%;
 }
 
@@ -12,31 +12,32 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-}
-
-.deckHeaderToggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 4px 6px;
-  border-radius: 6px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  color: var(--text-muted);
-  transition: all var(--transition-fast);
-}
-
-.deckHeaderToggle:hover {
-  background: var(--surface-accent);
-  color: var(--accent-ink);
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .deckHeaderLeft {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.deckTitleBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: inherit;
+  transition: background var(--transition-fast);
+}
+
+.deckTitleBtn:hover {
+  background: var(--surface-accent);
 }
 
 .deckIcon {
@@ -54,20 +55,20 @@
   color: var(--text-strong);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 
 .deckCountBadge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 16px;
-  height: 16px;
+  min-width: 15px;
+  height: 15px;
   padding: 0 4px;
   border-radius: 3px;
   background: var(--accent);
   color: #ffffff;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
 }
 
@@ -78,13 +79,103 @@
   letter-spacing: 0.3px;
 }
 
+/* Category Filter Tabs */
+.filterTabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--surface-muted);
+  padding: 1.5px 2px;
+  border-radius: 5px;
+  border: 0.5px solid var(--border-soft);
+}
+
+.filterTab {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  padding: 1.5px 6px;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.filterTab:hover {
+  color: var(--text-strong);
+}
+
+.filterTabActive {
+  background: var(--surface-base);
+  color: var(--accent-ink);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  font-weight: 700;
+}
+
 .deckHeaderRight {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+/* Left/Right Carousel Controls */
+.carouselNavGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.carouselNavBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-base);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  padding: 0;
+}
+
+.carouselNavBtn:hover:not(:disabled) {
+  background: var(--surface-accent);
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+
+.carouselNavBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.expandToggleBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  padding: 2px 5px;
+  border-radius: 4px;
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-subtle-aa);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.expandToggleBtn:hover {
+  background: var(--surface-accent);
+  color: var(--accent-ink);
+}
+
+.expandLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
 }
 
 .chevronIcon {
@@ -95,26 +186,86 @@
   transform: rotate(180deg);
 }
 
-/* Grid of rich cards */
-.deckCardsGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+/* Outer wrapper for scroll track with edge fades */
+.trackOuterWrapper {
+  position: relative;
+  width: 100%;
+  border-radius: var(--radius-card);
+  animation: hudPopIn 180ms ease;
+}
+
+.fadeIndicatorLeft {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 6px;
+  width: 22px;
+  background: linear-gradient(to right, var(--surface-soft), transparent);
+  pointer-events: none;
+  z-index: 3;
+  border-top-left-radius: var(--radius-card);
+  border-bottom-left-radius: var(--radius-card);
+}
+
+.fadeIndicatorRight {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 6px;
+  width: 22px;
+  background: linear-gradient(to left, var(--surface-soft), transparent);
+  pointer-events: none;
+  z-index: 3;
+  border-top-right-radius: var(--radius-card);
+  border-bottom-right-radius: var(--radius-card);
+}
+
+/* The compact scrollable track (Small Box) */
+.deckScrollTrack {
+  display: flex;
   gap: 8px;
-  animation: hudPopIn 200ms ease;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  padding: 2px 2px 6px 2px;
+  width: 100%;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+  outline: none;
 }
 
-@media (max-width: 600px) {
-  .deckCardsGrid {
-    grid-template-columns: 1fr;
-  }
+.deckScrollTrack::-webkit-scrollbar {
+  height: 4px;
 }
 
+.deckScrollTrack::-webkit-scrollbar-track {
+  background: var(--surface-muted);
+  border-radius: 2px;
+}
+
+.deckScrollTrack::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 2px;
+}
+
+.deckScrollTrack::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+/* Individual Compact Card inside the Track */
 .sourceCard {
+  flex: 0 0 240px;
+  min-width: 220px;
+  max-width: 260px;
+  height: 102px;
+  box-sizing: border-box;
+  scroll-snap-align: start;
   position: relative;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 10px 12px;
+  padding: 8px 10px;
   background: var(--surface-soft);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-card);
@@ -133,14 +284,14 @@
   background: var(--surface-base);
   border-color: var(--accent-border);
   box-shadow: var(--shadow-card-hover), var(--glow-subtle);
-  transform: translateY(-1.5px);
+  transform: translateY(-1px);
 }
 
 .sourceCardActive {
   background: var(--surface-accent) !important;
   border-color: var(--accent) !important;
   box-shadow: var(--shadow-card-hover), var(--glow-accent) !important;
-  transform: translateY(-2px) scale(1.01);
+  transform: translateY(-1.5px) scale(1.01);
 }
 
 .cardPdf {
@@ -155,49 +306,67 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  margin-bottom: 6px;
+  gap: 4px;
+  margin-bottom: 3px;
 }
 
-.cardIndexBadge {
+.cardHeaderBadges {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .cardIndexGlyph {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
   color: var(--accent-ink);
+  flex-shrink: 0;
 }
 
-.cardTypePill {
+.cardTypePdf {
   font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 600;
+  font-size: 8.5px;
+  font-weight: 700;
   padding: 1px 4px;
   border-radius: 3px;
-  background: var(--surface-muted);
-  color: var(--text-subtle-aa);
-  letter-spacing: 0.4px;
+  background: var(--surface-accent);
+  color: var(--accent);
+  letter-spacing: 0.3px;
   text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.cardTypeWeb {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--warning-surface);
+  color: var(--tech-amber);
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  flex-shrink: 0;
 }
 
 .cardPageTag {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
-  color: var(--tech-amber);
-  background: var(--warning-surface);
-  padding: 1px 6px;
+  color: var(--accent);
+  background: var(--surface-accent);
+  padding: 0 4px;
   border-radius: 3px;
-  border: 0.5px solid rgba(200, 90, 50, 0.2);
+  border: 0.5px solid rgba(43, 76, 126, 0.2);
+  flex-shrink: 0;
 }
 
 .cardHostTag {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 9px;
   color: var(--text-subtle-aa);
   max-width: 90px;
   overflow: hidden;
@@ -205,40 +374,64 @@
   white-space: nowrap;
 }
 
+.cardCopyBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: var(--text-subtle-aa);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+  padding: 0;
+}
+
+.cardCopyBtn:hover {
+  background: var(--surface-muted);
+  color: var(--accent);
+}
+
+.cardCopyBtnSuccess {
+  color: var(--success, #10B981) !important;
+}
+
 .cardTitle {
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   color: var(--text-strong);
-  line-height: 1.35;
-  margin-bottom: 6px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  line-height: 1.25;
+  margin-bottom: 2px;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cardExcerpt {
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 10px;
+  line-height: 1.3;
   color: var(--text-muted);
   background: var(--surface-base);
   border: 0.5px solid var(--border-soft);
   border-radius: 4px;
-  padding: 5px 8px;
-  margin-bottom: 8px;
+  padding: 2px 5px;
   font-style: italic;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  position: relative;
+  flex: 1;
+  margin-bottom: 2px;
 }
 
 .cardQuoteMarker {
   font-family: var(--font-heading);
   font-weight: bold;
-  font-size: 13px;
+  font-size: 11px;
   color: var(--accent);
   margin-right: 2px;
 }
@@ -247,19 +440,19 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  margin-top: auto;
-  padding-top: 4px;
+  padding-top: 2px;
   border-top: 0.5px solid var(--border-soft);
+  margin-top: auto;
 }
 
 .cardActionHint {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
   color: var(--accent);
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   transition: color var(--transition-fast);
 }
 

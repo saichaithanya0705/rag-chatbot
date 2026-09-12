@@ -6,7 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.routers.chat import CHAT_RATE_LIMIT_DETAIL, _client_rate_limit_id, _enforce_chat_rate_limit
-from app.services.chat_rate_limiter import ChatRateLimiter
+from app.services.chat.chat_rate_limiter import ChatRateLimiter
 
 
 class ManualClock:

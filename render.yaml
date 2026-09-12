@@ -22,6 +22,6 @@ services:
       - key: RAG_RERANKER_MODEL
         value: nvidia/llama-nemotron-rerank-vl-1b-v2
       - key: RAG_EMBED_MODEL
-        value: nvidia/llama-nemotron-embed-1b-v2
+        value: nvidia/nemotron-3-embed-1b
       - key: RAG_EMBEDDING_DIMENSIONS
-        value: "1024"
+        value: "2048"

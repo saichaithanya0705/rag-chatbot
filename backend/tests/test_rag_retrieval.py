@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from app.services.rag_retrieval import RagRetrievalEngine
+from app.services.rag.rag_retrieval import RagRetrievalEngine
 
 
 class _FakeCollection:

@@ -9,7 +9,7 @@ from unittest.mock import patch
 import httpx
 import numpy as np
 
-from app.services.nvidia_client import (
+from app.services.providers.nvidia_client import (
     DEFAULT_LOCAL_EMBEDDING_DIMENSIONS,
     DEFAULT_LOCAL_EMBEDDING_MODEL,
     NvidiaClient,
@@ -120,7 +120,7 @@ class NvidiaClientTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_constructor_does_not_load_local_model_without_api_key(self) -> None:
         with patch(
-            "app.services.nvidia_client._load_local_embedding_model",
+            "app.services.providers.nvidia_client._load_local_embedding_model",
             side_effect=AssertionError("constructor should not load local models"),
         ):
             client = NvidiaClient(
@@ -140,7 +140,7 @@ class NvidiaClientTests(unittest.IsolatedAsyncioTestCase):
             clear=False,
         ):
             with patch(
-                "app.services.nvidia_client._load_local_embedding_model",
+                "app.services.providers.nvidia_client._load_local_embedding_model",
                 return_value=_FakeFastEmbed(),
             ) as load_model:
                 client = NvidiaClient(
@@ -160,6 +160,54 @@ class NvidiaClientTests(unittest.IsolatedAsyncioTestCase):
                     DEFAULT_LOCAL_EMBEDDING_MODEL,
                     cache_dir=Path("durable-model-cache"),
                 )
+                await client.aclose()
+
+    async def test_extracting_fallback_uses_local_model_when_primary_embeddings_are_cloud(self) -> None:
+        with patch(
+            "app.services.providers.nvidia_client._load_local_embedding_model",
+            return_value=_FakeFastEmbed(),
+        ) as load_model:
+            client = NvidiaClient(
+                base_url="https://example.com",
+                embed_model="nvidia/llama-nemotron-embed-1b-v2",
+                chat_model="meta/llama-3.2-11b-vision-instruct",
+                nvidia_api_key="configured",
+                expected_embedding_dimensions=1024,
+                local_embedding_cache_dir=Path("durable-model-cache"),
+            )
+
+            embeddings = await client.embed_texts_locally(["question", "candidate"])
+
+            self.assertEqual(len(embeddings), 2)
+            self.assertEqual(len(embeddings[0]), DEFAULT_LOCAL_EMBEDDING_DIMENSIONS)
+            load_model.assert_called_once_with(
+                DEFAULT_LOCAL_EMBEDDING_MODEL,
+                cache_dir=Path("durable-model-cache"),
+            )
+            await client.aclose()
+
+    async def test_extracting_fallback_reuses_the_default_primary_local_model(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"RAG_NVIDIA_API_KEY": "", "NVIDIA_API_KEY": ""},
+            clear=False,
+        ):
+            with patch(
+                "app.services.providers.nvidia_client._load_local_embedding_model",
+                return_value=_FakeFastEmbed(),
+            ) as load_model:
+                client = NvidiaClient(
+                    base_url="https://example.com",
+                    embed_model=DEFAULT_LOCAL_EMBEDDING_MODEL,
+                    chat_model="meta/llama-3.2-11b-vision-instruct",
+                    nvidia_api_key="",
+                    expected_embedding_dimensions=DEFAULT_LOCAL_EMBEDDING_DIMENSIONS,
+                )
+
+                await client.embed_texts(["indexed passage"])
+                await client.embed_texts_locally(["question", "candidate"])
+
+                self.assertEqual(load_model.call_count, 1)
                 await client.aclose()
 
     def test_local_aliases_resolve_to_models_fastembed_can_load(self) -> None:
@@ -193,10 +241,10 @@ class NvidiaClientTests(unittest.IsolatedAsyncioTestCase):
             nvidia_api_key="configured",
             expected_embedding_dimensions=1024,
         )
-        with patch("app.services.nvidia_client.httpx.AsyncClient", return_value=_FailingEmbeddingHttpClient()):
-            with patch("app.services.nvidia_client.asyncio.sleep", return_value=None):
+        with patch("app.services.providers.nvidia_client.httpx.AsyncClient", return_value=_FailingEmbeddingHttpClient()):
+            with patch("app.services.providers.nvidia_client.asyncio.sleep", return_value=None):
                 with patch(
-                    "app.services.nvidia_client._load_local_embedding_model",
+                    "app.services.providers.nvidia_client._load_local_embedding_model",
                     side_effect=AssertionError("cloud indexes must never use a different local model"),
                 ):
                     with self.assertRaisesRegex(RuntimeError, "refusing to mix"):
@@ -212,7 +260,7 @@ class NvidiaClientTests(unittest.IsolatedAsyncioTestCase):
             expected_embedding_dimensions=2,
         )
         malformed_client = _MalformedEmbeddingHttpClient()
-        with patch("app.services.nvidia_client.httpx.AsyncClient", return_value=malformed_client):
+        with patch("app.services.providers.nvidia_client.httpx.AsyncClient", return_value=malformed_client):
             with self.assertRaisesRegex(ValueError, "non-numeric"):
                 await client.embed_texts(["hello"])
 
@@ -235,7 +283,7 @@ class NvidiaClientTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
 
-        with self.assertLogs("app.services.nvidia_client", level="WARNING") as logs:
+        with self.assertLogs("app.services.providers.nvidia_client", level="WARNING") as logs:
             deltas = [
                 delta
                 async for delta in client.stream_answer(

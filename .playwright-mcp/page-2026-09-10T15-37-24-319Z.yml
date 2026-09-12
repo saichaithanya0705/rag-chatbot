@@ -1,0 +1,19 @@
+- generic [ref=f1e3]:
+  - button "Toggle empty" [ref=f1e4]
+  - generic [ref=f1e5]:
+    - generic [ref=f1e6]:
+      - button "Labels" [ref=f1e7] [cursor=pointer]
+      - generic [ref=f1e8]:
+        - button "3D" [pressed] [ref=f1e9] [cursor=pointer]
+        - button "2D" [ref=f1e10] [cursor=pointer]
+      - button "Zoom In" [ref=f1e12] [cursor=pointer]: +
+      - button "Zoom Out" [ref=f1e13] [cursor=pointer]: –
+      - button "Fit to View" [ref=f1e14] [cursor=pointer]: ⛶
+      - button "Explorer Guide" [ref=f1e16] [cursor=pointer]: Guide
+    - generic:
+      - generic [ref=f1e17]:
+        - generic [ref=f1e18]: Single-document topic
+        - generic [ref=f1e20]: Cross-document topic
+        - generic [ref=f1e22]: Isolated topic
+        - generic [ref=f1e24]: Size = excerpts
+      - generic [ref=f1e25]: "Left-click: Orbit • Right-click: Pan • Scroll: Zoom • Dbl-click: Focus"

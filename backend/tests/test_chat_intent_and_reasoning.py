@@ -3,13 +3,14 @@ from __future__ import annotations
 import asyncio
 import unittest
 
-from app.services.answer_trace import build_answer_trace
-from app.services.nvidia_client import NvidiaGenerationResult
-from app.services.rag_answer_text import clean_model_thinking_summary
-from app.services.rag_citations import citation_from_context, pdf_context_from_chunk
-from app.services.rag_service import RagService
-from app.services.rag_types import RetrievedChunk, RetrievedContext
-from app.services.web_search_service import WebSearchResult
+from app.services.chat.answer_trace import build_answer_trace
+from app.services.rag.extractive_fallback_service import ExtractiveFallbackService
+from app.services.providers.nvidia_client import NvidiaGenerationResult
+from app.services.rag.rag_answer_text import clean_model_thinking_summary
+from app.services.rag.rag_citations import citation_from_context, pdf_context_from_chunk
+from app.services.rag.rag_service import RagService
+from app.services.rag.rag_types import RetrievedChunk, RetrievedContext
+from app.services.providers.web_search_service import WebSearchResult
 
 
 class _ExplodingDocumentService:
@@ -131,14 +132,19 @@ def _service(
     reranker_service: object | None = None,
     web_search_service: object | None = None,
 ) -> RagService:
+    resolved_nvidia_client = nvidia_client or _FakeNvidiaClient()
     return RagService(
-        nvidia_client=nvidia_client or _FakeNvidiaClient(),  # type: ignore[arg-type]
+        nvidia_client=resolved_nvidia_client,  # type: ignore[arg-type]
         chroma_store=object(),  # type: ignore[arg-type]
         document_service=document_service or _ExplodingDocumentService(),  # type: ignore[arg-type]
         kg_manager=object(),  # type: ignore[arg-type]
         query_rewrite_service=object(),  # type: ignore[arg-type]
         reranker_service=reranker_service or object(),  # type: ignore[arg-type]
         web_search_service=web_search_service or object(),  # type: ignore[arg-type]
+        extractive_fallback_service=ExtractiveFallbackService(
+            resolved_nvidia_client,  # type: ignore[arg-type]
+            enabled=False,
+        ),
         top_k=3,
         web_search_score_threshold=0.3,
     )

@@ -11,6 +11,7 @@ export interface ExplorerNode extends KnowledgeGraphNode {
   radius: number;
   x: number;
   y: number;
+  z: number;
 }
 
 interface SimLink {
@@ -95,12 +96,21 @@ export function buildGraphLayout(visibleGraph: KnowledgeGraph): GraphLayout | nu
   if (visibleGraph.nodes.length === 0) return null;
 
   const maxChunk = Math.max(...visibleGraph.nodes.map((node) => node.chunkCount), 1);
-  const simNodes: ExplorerNode[] = visibleGraph.nodes.map((node) => ({
-    ...node,
-    radius: 18 + Math.sqrt(node.chunkCount / maxChunk) * 28,
-    x: GRAPH_WIDTH / 2,
-    y: GRAPH_HEIGHT / 2,
-  }));
+  const totalNodes = visibleGraph.nodes.length;
+  const simNodes: ExplorerNode[] = visibleGraph.nodes.map((node, index) => {
+    // Calculate balanced spherical z-depth based on harmonic index and topic id hash
+    const hash = Array.from(node.id).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+    const angle = (index / Math.max(totalNodes, 1)) * Math.PI * 2;
+    const z = Math.sin(angle * 2 + hash * 0.1) * 85 + Math.cos(index * 2.3) * 45;
+
+    return {
+      ...node,
+      radius: 18 + Math.sqrt(node.chunkCount / maxChunk) * 28,
+      x: GRAPH_WIDTH / 2,
+      y: GRAPH_HEIGHT / 2,
+      z,
+    };
+  });
   const simLinks: SimLink[] = visibleGraph.edges.map((edge) => ({
     source: edge.source,
     target: edge.target,

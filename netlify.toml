@@ -5,6 +5,7 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  VITE_API_BASE_URL = "https://rag-chatbot-api-0612.onrender.com"
 
 [[redirects]]
   from = "/*"

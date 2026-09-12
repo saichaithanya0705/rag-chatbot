@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from app.core.config import load_settings
-from app.services.ingestion_dispatcher import IngestionDispatcher
+from app.services.ingestion.ingestion_dispatcher import IngestionDispatcher
 
 
 def _test_settings(tmp_path: Path):

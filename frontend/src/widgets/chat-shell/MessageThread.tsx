@@ -4,57 +4,15 @@ import type { Citation, Message } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
 import { EvidenceDeck } from "@/shared/ui/evidence-deck/EvidenceDeck";
 import { MessageMarkdown } from "@/shared/ui/message-markdown/MessageMarkdown";
+import { ModelThinkingDrawer } from "@/shared/ui/model-thinking/ModelThinkingDrawer";
 import threadStyles from "./message-thread.module.css";
 import chatStyles from "./chat-view.module.css";
 
 const styles = { ...threadStyles, ...chatStyles };
 
-function getAnswerTraceItems(message: Message) {
-  const items: string[] = [];
 
-  if (message.toolCall) {
-    items.push(
-      message.status === "thinking"
-        ? "Checking live sources to supplement the indexed PDFs."
-        : "Supplemented the answer with current web evidence where the local library was not enough.",
-    );
-  }
 
-  if (message.crossSessionMemoryUsed) {
-    items.push(
-      `Reused relevant context from ${message.crossSessionMemoryUsed} other session${
-        message.crossSessionMemoryUsed === 1 ? "" : "s"
-      } in this local workspace. Start a fresh chat if you want answers grounded only in the current thread.`,
-    );
-  }
 
-  if (message.citations.length > 0) {
-    items.push(
-      `Grounded the answer in ${message.citations.length} cited source${
-        message.citations.length === 1 ? "" : "s"
-      }.`,
-    );
-  }
-
-  return items;
-}
-
-function getDisplayTraceItems(message: Message) {
-  if (message.answerTrace && message.answerTrace.length > 0) {
-    return message.answerTrace.map((step) => step.detail);
-  }
-
-  return getAnswerTraceItems(message);
-}
-
-function getModelThinking(message: Message) {
-  const content = message.modelThinking?.trim();
-  return content && content.length > 0 ? content : null;
-}
-
-function showModelThinkingPanel(message: Message, thinkingEnabled: boolean) {
-  return thinkingEnabled && Boolean(message.thinkingRequested);
-}
 
 function hasVisibleAssistantContent(message: Message) {
   const content = message.content.trim();
@@ -290,65 +248,11 @@ export function MessageThread() {
               {message.role === "assistant" ? (
                 hasVisibleAssistantContent(message) ? (
                   <>
-                    {/* Compact Search Process inside the bubble */}
-                    {getDisplayTraceItems(message).length > 0 && (
-                      <details className={styles.compactTraceDetails}>
-                        <summary className={styles.compactTraceSummary}>
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <circle cx="12" cy="12" r="10"/>
-                            <path d="M12 16v-4"/>
-                            <path d="M12 8h.01"/>
-                          </svg>
-                          <span>Search Trace ({getDisplayTraceItems(message).length} steps)</span>
-                        </summary>
-                        <div className={styles.compactTraceBody}>
-                          {getDisplayTraceItems(message).map((item) => (
-                            <div className={styles.compactTraceItem} key={item}>
-                              • {item}
-                            </div>
-                          ))}
-                        </div>
-                      </details>
-                    )}
-
-                    {/* Collapsible Model Thinking Process inside the bubble */}
-                    {showModelThinkingPanel(message, state.thinkingEnabled) && (
-                      <details className={styles.modelThinkingDetails} open={message.status === "thinking"}>
-                        <summary className={styles.modelThinkingSummary}>
-                          <div className={styles.modelThinkingHeader}>
-                            <svg
-                              width="11"
-                              height="11"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2.5"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              className={styles.bulbIcon}
-                            >
-                              <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .5 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" />
-                              <path d="M9 18h6" />
-                              <path d="M10 22h4" />
-                            </svg>
-                            <span>
-                              {message.status === "thinking"
-                                ? "Thinking..."
-                                : "Thinking Process"}
-                            </span>
-                          </div>
-                        </summary>
-                        <div className={styles.modelThinkingContent}>
-                          {getModelThinking(message) ? (
-                            <MessageMarkdown content={getModelThinking(message) ?? ""} />
-                          ) : (
-                            <p style={{ margin: 0, opacity: 0.7 }}>
-                              Preparing reasoning summary...
-                            </p>
-                          )}
-                        </div>
-                      </details>
-                    )}
+                    {/* Unified Model Thinking & Reasoning Bar (ChatGPT o1 / Claude 3.7 / DeepSeek style) */}
+                    <ModelThinkingDrawer
+                      message={message}
+                      onSelectPdfCitation={(citation) => void actions.openPdfPreview(citation)}
+                    />
 
                     <MessageMarkdown
                       content={message.content}
@@ -368,11 +272,17 @@ export function MessageThread() {
                     )}
                   </>
                 ) : (
-                  <div className={styles.loadingDots}>
-                    <span className={styles.dot} />
-                    <span className={styles.dot} />
-                    <span className={styles.dot} />
-                  </div>
+                  <>
+                    <ModelThinkingDrawer
+                      message={message}
+                      onSelectPdfCitation={(citation) => void actions.openPdfPreview(citation)}
+                    />
+                    <div className={styles.loadingDots}>
+                      <span className={styles.dot} />
+                      <span className={styles.dot} />
+                      <span className={styles.dot} />
+                    </div>
+                  </>
                 )
               ) : (
                 <div className={styles.userBubbleContent}>

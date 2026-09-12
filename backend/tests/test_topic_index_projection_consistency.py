@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from app.core.database import Database
-from app.services.kg_manager import TopicNodeRecord
-from app.services.topic_index_service import SourceChunkRecord, TopicIndexService
+from app.services.knowledge.kg_manager import TopicNodeRecord
+from app.services.knowledge.topic_index_service import SourceChunkRecord, TopicIndexService
 
 
 class _FakeAllChunksCollection:

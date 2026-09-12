@@ -1,0 +1,148 @@
+/* Subtle Model Thinking (ChatGPT o1 / Claude 3.7 / DeepSeek Style) */
+
+.thinkingShell {
+  margin-bottom: 6px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+/* Subtle, un-highlighted trigger button */
+.triggerBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-subtle-aa);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  opacity: 0.75;
+  transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+}
+
+.triggerBtn:hover {
+  opacity: 1;
+  color: var(--text-muted);
+  background: var(--surface-soft);
+}
+
+.triggerBtnOpen {
+  opacity: 0.9;
+  color: var(--text-muted);
+}
+
+.triggerBtnThinking {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.thinkingIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+  opacity: 0.85;
+}
+
+.thinkingIconPulsing svg {
+  animation: subtlePulse 2s infinite ease-in-out;
+}
+
+@keyframes subtlePulse {
+  0%, 100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.triggerLabel {
+  letter-spacing: 0.1px;
+}
+
+.chevronArrow {
+  transition: transform var(--transition-fast);
+  opacity: 0.6;
+}
+
+.chevronRotated {
+  transform: rotate(180deg);
+}
+
+/* Indented, quiet thought container */
+.thoughtContent {
+  margin: 3px 0 6px 6px;
+  padding: 2px 0 4px 10px;
+  border-left: 1.5px solid var(--border-soft);
+  color: var(--text-subtle-aa);
+  font-size: 11px;
+  line-height: 1.5;
+  animation: hudPopIn 120ms ease;
+}
+
+.thoughtMarkdown {
+  font-style: italic;
+  color: var(--text-subtle-aa);
+}
+
+.thoughtMarkdown :global(p) {
+  margin: 0 0 6px 0;
+}
+
+.thoughtMarkdown :global(p:last-child) {
+  margin-bottom: 0;
+}
+
+.thoughtMarkdown :global(h1),
+.thoughtMarkdown :global(h2),
+.thoughtMarkdown :global(h3),
+.thoughtMarkdown :global(h4) {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 6px 0 2px 0;
+  font-style: normal;
+}
+
+.thoughtMarkdown :global(ul),
+.thoughtMarkdown :global(ol) {
+  margin: 0 0 6px 0;
+  padding-left: 16px;
+}
+
+.thoughtSteps {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.stepItem {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  line-height: 1.45;
+}
+
+.stepNum {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.stepText {
+  color: var(--text-subtle-aa);
+  font-size: 11px;
+}
+
+.thoughtPlaceholder {
+  font-style: italic;
+  opacity: 0.7;
+  font-size: 10.5px;
+}

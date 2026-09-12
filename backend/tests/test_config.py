@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from app.core.config import load_settings
+from app.core.nvidia_retrieval import DEFAULT_RERANKER_MODEL
 
 
 class ConfigTests(unittest.TestCase):
@@ -29,6 +30,18 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(settings.chat_rate_limit_per_minute, 3)
         self.assertEqual(settings.chat_rate_limit_per_hour, 12)
+        self.assertTrue(settings.extractive_fallback_enabled)
+        self.assertEqual(settings.reranker_model, DEFAULT_RERANKER_MODEL)
+
+    def test_extractive_fallback_can_be_disabled(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"RAG_ENABLE_EXTRACTIVE_FALLBACK": "false"},
+            clear=False,
+        ):
+            settings = load_settings()
+
+        self.assertFalse(settings.extractive_fallback_enabled)
 
     def test_standard_nvidia_api_key_fallback_is_resolved_in_settings(self) -> None:
         with patch.dict(

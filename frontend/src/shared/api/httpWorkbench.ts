@@ -13,8 +13,8 @@ import type {
   SessionSummary,
   StreamMessageResult,
 } from "@/shared/api/types";
+import { API_BASE_URL } from "@/shared/api/apiBaseUrl";
 
-const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL ?? "http://localhost:8000";
 const ROOT_COLLECTION: CollectionSummary = { id: "all-pdfs", label: "All PDFs" };
 const USER_ID_STORAGE_KEY = "local-rag-chat/user-id";
 const BACKEND_STARTING_DETAIL = "The service is still starting up. Try again shortly.";

@@ -8,8 +8,8 @@ from chromadb.api.client import SharedSystemClient
 
 from app.core.chroma_store import ChromaStore
 from app.core.database import Database
-from app.services.kg_manager import KgManager
-from app.services.topic_index_service import SourceChunkRecord, TopicIndexService
+from app.services.knowledge.kg_manager import KgManager
+from app.services.knowledge.topic_index_service import SourceChunkRecord, TopicIndexService
 
 
 class _DeterministicTopicIndexService(TopicIndexService):

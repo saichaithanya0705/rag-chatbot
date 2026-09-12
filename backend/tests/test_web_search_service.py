@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import unittest
 
-from app.services.web_search_service import WebSearchResult, WebSearchService
+from app.services.providers.web_search_service import WebSearchResult, WebSearchService
 
 
 class _HydrationFallbackWebSearchService(WebSearchService):

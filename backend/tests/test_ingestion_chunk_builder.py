@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from app.services.document_parser import ParsedBlock
-from app.services.ingestion_chunk_builder import IngestionChunkBuilder
+from app.services.ingestion.document_parser import ParsedBlock
+from app.services.ingestion.ingestion_chunk_builder import IngestionChunkBuilder
 
 
 def _block(text: str, *, page_number: int = 1) -> ParsedBlock:

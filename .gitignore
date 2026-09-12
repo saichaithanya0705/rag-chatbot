@@ -42,3 +42,6 @@ test_image.png
 # MemPalace per-project files (issue #185)
 mempalace.yaml
 entities.json
+
+# Local Netlify folder
+.netlify

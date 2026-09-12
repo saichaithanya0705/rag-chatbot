@@ -53,6 +53,9 @@ You can override them with environment variables:
 - `RAG_RERANKER_MODEL`
 - `RAG_DATA_DIR`
 - `RAG_MODEL_CACHE_DIR`
+- `RAG_ENABLE_EXTRACTIVE_FALLBACK` (`true` by default)
 - `RAG_ALLOWED_ORIGINS`
 
 Local embedding weights are stored in the application-owned model cache. If FastEmbed detects an incomplete tokenizer snapshot there, the backend preserves it and retries once in an isolated recovery subdirectory rather than continuing with a broken shared temporary cache.
+
+When the remote chat provider fails, the optional extractive fallback uses the local BGE sentence-embedding model to select one strongly matched sentence from the retrieved evidence. The selected sentence still passes the normal grounding/citation gate; low-confidence, unsupported synthesis questions, model errors, and timeouts fall through to deterministic cited evidence composition.

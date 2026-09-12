@@ -72,6 +72,22 @@ function parsePreviewHtml(htmlContent: string) {
 
 const PANEL_WIDTH_KEY = "local-rag-chat/pdf-panel-width";
 
+function getDefaultPanelWidth() {
+  if (typeof window === "undefined") {
+    return 560;
+  }
+  return Math.round(Math.min(Math.max(window.innerWidth * 0.45, 420), window.innerWidth * 0.65));
+}
+
+function clampWidth(nextWidth: number) {
+  const minWidth = 420;
+  const maxWidth =
+    typeof window !== "undefined"
+      ? Math.max(minWidth, Math.round(window.innerWidth * 0.65))
+      : 800;
+  return Math.min(maxWidth, Math.max(minWidth, nextWidth));
+}
+
 export function PdfViewerPanel({ open }: PdfViewerPanelProps) {
   const { state, actions } = useWorkbench();
   const preview = state.pdfPreview;
@@ -79,9 +95,9 @@ export function PdfViewerPanel({ open }: PdfViewerPanelProps) {
   const [width, setWidth] = useState(() => {
     try {
       const stored = sessionStorage.getItem(PANEL_WIDTH_KEY);
-      return stored ? clampWidth(Number(stored)) : 420;
+      return stored ? clampWidth(Number(stored)) : getDefaultPanelWidth();
     } catch {
-      return 420;
+      return getDefaultPanelWidth();
     }
   });
   const dragging = useRef(false);
@@ -89,10 +105,6 @@ export function PdfViewerPanel({ open }: PdfViewerPanelProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
   const isModalDialog = state.isCompactViewport && open;
-
-  function clampWidth(nextWidth: number) {
-    return Math.min(800, Math.max(320, nextWidth));
-  }
 
   function resizeWidth(delta: number) {
     setWidth((current) => clampWidth(current + delta));
@@ -148,11 +160,11 @@ export function PdfViewerPanel({ open }: PdfViewerPanelProps) {
         break;
       case "Home":
         event.preventDefault();
-        setWidth(320);
+        setWidth(420);
         break;
       case "End":
         event.preventDefault();
-        setWidth(800);
+        setWidth(typeof window !== "undefined" ? Math.round(window.innerWidth * 0.65) : 800);
         break;
       default:
         break;

@@ -34,6 +34,7 @@ class Settings:
     reranker_model: str
     chat_history_collection_name: str
     cross_session_memory_enabled: bool
+    extractive_fallback_enabled: bool
     celery_broker_url: str
     celery_queue_name: str
     celery_transport_role: str
@@ -134,6 +135,11 @@ def load_settings() -> Settings:
         ),
         cross_session_memory_enabled=os.getenv(
             "RAG_ENABLE_CROSS_SESSION_MEMORY",
+            "true",
+        ).lower()
+        in {"1", "true", "yes", "on"},
+        extractive_fallback_enabled=os.getenv(
+            "RAG_ENABLE_EXTRACTIVE_FALLBACK",
             "true",
         ).lower()
         in {"1", "true", "yes", "on"},

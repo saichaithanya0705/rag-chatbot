@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from app.services.document_preview_service import DocumentPreviewService
-from app.services.document_service import StoredChunk
+from app.services.documents.document_preview_service import DocumentPreviewService
+from app.services.documents.document_service import StoredChunk
 
 
 class _PreviewSource:

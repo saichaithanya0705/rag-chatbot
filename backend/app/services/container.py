@@ -5,23 +5,24 @@ from dataclasses import dataclass
 from app.core.chroma_store import ChromaStore
 from app.core.config import Settings
 from app.core.database import Database
-from app.services.opendataloader_parser import OpenDataLoaderDocumentParser
-from app.services.chat_rate_limiter import ChatRateLimiter
-from app.services.document_preview_service import DocumentPreviewService
-from app.services.document_service import DocumentService
-from app.services.embedding_index_service import EmbeddingIndexService
-from app.services.history_service import HistoryService
-from app.services.ingestion_dispatcher import IngestionDispatcher
-from app.services.ingestion_service import IngestionService
-from app.services.kg_manager import KgManager
-from app.services.keyword_service import KeywordService
-from app.services.nvidia_client import NvidiaClient, resolve_embedding_runtime
-from app.services.query_rewrite_service import QueryRewriteService
-from app.services.rag_service import RagService
-from app.services.reranker_service import RerankerService
-from app.services.text_splitter import SemanticTextSplitter
-from app.services.topic_index_service import TopicIndexService
-from app.services.web_search_service import WebSearchService
+from app.services.chat.chat_rate_limiter import ChatRateLimiter
+from app.services.chat.query_rewrite_service import QueryRewriteService
+from app.services.documents.document_preview_service import DocumentPreviewService
+from app.services.documents.document_service import DocumentService
+from app.services.history.history_service import HistoryService
+from app.services.ingestion.ingestion_dispatcher import IngestionDispatcher
+from app.services.ingestion.ingestion_service import IngestionService
+from app.services.ingestion.opendataloader_parser import OpenDataLoaderDocumentParser
+from app.services.ingestion.text_splitter import SemanticTextSplitter
+from app.services.knowledge.keyword_service import KeywordService
+from app.services.knowledge.kg_manager import KgManager
+from app.services.knowledge.topic_index_service import TopicIndexService
+from app.services.providers.embedding_index_service import EmbeddingIndexService
+from app.services.providers.nvidia_client import NvidiaClient, resolve_embedding_runtime
+from app.services.providers.reranker_service import RerankerService
+from app.services.providers.web_search_service import WebSearchService
+from app.services.rag.extractive_fallback_service import ExtractiveFallbackService
+from app.services.rag.rag_service import RagService
 
 
 @dataclass
@@ -76,6 +77,10 @@ def build_container(settings: Settings) -> ServiceContainer:
         nvidia_api_key=settings.nvidia_api_key,
         expected_embedding_dimensions=embedding_runtime.dimensions,
         local_embedding_cache_dir=settings.model_cache_dir,
+    )
+    extractive_fallback_service = ExtractiveFallbackService(
+        nvidia_client,
+        enabled=settings.extractive_fallback_enabled,
     )
     document_service = DocumentService(database=database, chroma_store=chroma_store)
     document_preview_service = DocumentPreviewService(document_service)
@@ -135,6 +140,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         query_rewrite_service=query_rewrite_service,
         reranker_service=reranker_service,
         web_search_service=web_search_service,
+        extractive_fallback_service=extractive_fallback_service,
         top_k=settings.top_k,
         web_search_score_threshold=settings.web_search_score_threshold,
     )

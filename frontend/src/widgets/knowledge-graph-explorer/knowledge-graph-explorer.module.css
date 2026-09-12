@@ -128,71 +128,233 @@
 
 .toolbar {
   display: flex;
-  align-items: end;
-  gap: 10px;
-  padding: 12px 16px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 16px;
   border-bottom: 0.5px solid var(--border-soft);
+  background: var(--surface-base);
   flex-wrap: wrap;
 }
 
-.field,
-.sliderField {
+.toolbarLeft {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  color: var(--text-subtle-aa);
-  font-size: var(--font-xs);
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 260px;
 }
 
-.field input,
-.field select {
-  height: 36px;
-  min-width: 210px;
+.searchFieldWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  max-width: 260px;
+}
+
+.searchIconSvg {
+  position: absolute;
+  left: 10px;
+  color: var(--text-subtle-aa);
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px 0 30px;
   border: 0.5px solid var(--border-strong);
   border-radius: 8px;
   background: var(--surface-base);
   color: var(--text-strong);
-  font: inherit;
-  padding: 0 10px;
+  font-family: var(--font-body);
+  font-size: var(--font-sm);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.field input:focus,
-.field select:focus {
+.searchInput:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(127, 119, 221, 0.18);
   outline: none;
 }
 
-.sliderField {
-  min-width: 160px;
+.selectFieldWrapper {
+  display: flex;
+  align-items: center;
 }
 
-.sliderField input {
+.documentSelect {
+  height: 34px;
+  min-width: 150px;
+  max-width: 210px;
+  padding: 0 10px;
+  border: 0.5px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-base);
+  color: var(--text-strong);
+  font-family: var(--font-body);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.documentSelect:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(127, 119, 221, 0.18);
+  outline: none;
+}
+
+.toolbarCenter {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.sliderGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 120px;
+}
+
+.sliderHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.sliderLabel {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-subtle-aa);
+}
+
+.sliderBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-accent);
+  color: var(--accent-ink);
+  line-height: 1.2;
+}
+
+.rangeInput {
+  width: 100%;
+  height: 4px;
   accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.toolbarRight {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .toolbarButton {
-  padding: 0 12px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border: 0.5px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-base);
+  color: var(--text-strong);
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: var(--font-xs);
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
 }
 
-.toolbarSpacer {
-  flex: 1;
+.toolbarButton:hover {
+  background: var(--surface-soft);
+  border-color: var(--accent-border);
+}
+
+.toolbarButton:active {
+  transform: scale(0.97);
+}
+
+/* ─── Guidance Banner ────────────────────────────────────────────── */
+
+.sparseBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--surface-soft);
+  border-bottom: 0.5px solid var(--accent-border);
+}
+
+.sparseBannerContent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-sm);
+  color: var(--text-strong);
+}
+
+.sparseBannerIcon {
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.sparseBannerText strong {
+  color: var(--accent-ink);
+}
+
+.sparseBannerButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 0.5px solid var(--accent-border);
+  border-radius: 6px;
+  background: var(--surface-accent);
+  color: var(--accent-ink);
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.sparseBannerButton:hover {
+  background: rgba(127, 119, 221, 0.22);
 }
 
 /* ─── Focus Styles ───────────────────────────────────────────────── */
 
-.field input:focus-visible,
-.field select:focus-visible,
+.searchInput:focus-visible,
+.documentSelect:focus-visible,
 .backButton:focus-visible,
 .toolbarButton:focus-visible,
 .primaryAction:focus-visible,
 .relationshipButton:focus-visible,
-.nodeButton:focus-visible,
-.edgeHit:focus-visible,
+.sparseBannerButton:focus-visible,
 .iconButton:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px rgba(127, 119, 221, 0.2);
+}
+
+.nodeButton,
+.nodeButton:focus,
+.nodeButton:focus-visible,
+.edgeHit,
+.edgeHit:focus,
+.edgeHit:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 /* ─── Workspace ──────────────────────────────────────────────────── */
@@ -305,14 +467,14 @@
 .nodeButton:focus-visible + .nodeCircle {
   fill: var(--surface-accent);
   stroke: var(--accent-strong);
-  stroke-width: 2.8;
-  filter: drop-shadow(0 0 8px rgba(127, 119, 221, 0.35));
+  stroke-width: 3.2;
+  filter: drop-shadow(0 0 8px rgba(127, 119, 221, 0.45));
 }
 
 .nodeSelected {
   stroke: var(--accent-strong);
-  stroke-width: 3;
-  filter: drop-shadow(0 0 10px rgba(127, 119, 221, 0.3));
+  stroke-width: 3.2;
+  filter: drop-shadow(0 0 10px rgba(127, 119, 221, 0.4));
 }
 
 .nodeOrphan {
@@ -426,14 +588,30 @@
 
 .primaryAction {
   width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   margin-top: 14px;
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 8px;
   background: var(--surface-accent);
-  border-color: var(--accent-border);
+  border: 1px solid var(--accent-border);
   color: var(--accent-ink);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
 }
 
 .primaryAction:hover {
-  background: rgba(127, 119, 221, 0.16);
+  background: var(--accent);
+  border-color: var(--accent-strong);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(127, 119, 221, 0.35);
+  transform: translateY(-0.5px);
 }
 
 .metricGrid,
@@ -472,23 +650,33 @@
   line-height: 1.45;
 }
 
-.evidenceGroup ul {
+.chipList {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  margin: 6px 0 0;
 }
 
-.evidenceGroup li {
-  padding: 7px 9px;
+.chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 3px 9px;
   border: 0.5px solid var(--border-soft);
-  border-radius: 8px;
+  border-radius: 999px;
   background: var(--surface-soft);
   color: var(--text-strong);
-  font-size: var(--font-sm);
-  overflow-wrap: anywhere;
+  font-size: 11.5px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.chip:hover {
+  border-color: var(--accent-border);
+  background: var(--surface-accent);
 }
 
 .relationshipList {
@@ -497,11 +685,8 @@
 
 .relationshipButton {
   width: 100%;
-  min-height: 40px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
   margin-top: 6px;
   padding: 8px 10px;
   border: 0.5px solid var(--border-soft);
@@ -511,51 +696,173 @@
   cursor: pointer;
   font: inherit;
   text-align: left;
-  transition: background 0.15s;
+  transition: all 0.15s ease;
 }
 
 .relationshipButton:hover {
   background: var(--surface-soft);
+  border-color: var(--accent-border);
 }
 
-.relationshipButton span {
-  min-width: 0;
+.relButtonMain {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+}
+
+.relButtonTitle {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-strong);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.relationshipButton strong {
+.strengthMeter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.strengthTrack {
+  flex: 1;
+  height: 5px;
+  background: var(--surface-muted);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.strengthFill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-strong) 100%);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.strengthLabel {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
   color: var(--accent-ink);
-  font-variant-numeric: tabular-nums;
+  min-width: 32px;
+  text-align: right;
 }
 
-/* ─── Hub Badge ──────────────────────────────────────────────────── */
+/* ─── Edge Score Bars ────────────────────────────────────────────── */
+
+.edgeScoreBars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 14px 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--surface-soft);
+  border: 0.5px solid var(--border-soft);
+}
+
+.edgeScoreRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.edgeScoreHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.edgeScoreLabel {
+  color: var(--text-subtle-aa);
+}
+
+.edgeScoreVal {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.edgeScoreTrack {
+  height: 5px;
+  background: var(--surface-muted);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.edgeScoreFill {
+  height: 100%;
+  background: linear-gradient(90deg, #7f77dd 0%, #534ab7 100%);
+  border-radius: 999px;
+}
+
+/* ─── Topic Badges ───────────────────────────────────────────────── */
 
 .hubBadge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   margin-top: 6px;
-  padding: 4px 8px;
-  border-radius: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
   background: var(--surface-accent);
+  border: 1px solid var(--accent-border);
   color: var(--accent-ink);
-  font-size: var(--font-xs);
-  font-weight: 500;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.connectedBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  color: #15803d;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .isolatedBadge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   margin-top: 6px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: rgba(200, 160, 80, 0.15);
-  color: var(--text-subtle-aa);
-  font-size: var(--font-xs);
-  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border-soft);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.standaloneTip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface-soft);
+  border: 0.5px solid var(--border-soft);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.standaloneTip strong {
+  color: var(--text-strong);
 }
 
 /* ─── Legend ──────────────────────────────────────────────────────── */
@@ -759,3 +1066,228 @@
     animation: none;
   }
 }
+
+/* ─── Guide Modal ────────────────────────────────────────────────── */
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(4, 6, 12, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: modalFadeIn 180ms ease;
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.guideModalCard {
+  width: 100%;
+  max-width: 780px;
+  max-height: 88vh;
+  background: #0d0f18;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(99, 102, 241, 0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modalScaleUp 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalScaleUp {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.guideModalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.guideBadge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #a5b4fc;
+  background: rgba(99, 102, 241, 0.16);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  padding: 2px 8px;
+  border-radius: 9999px;
+  margin-bottom: 6px;
+}
+
+.guideModalTitle {
+  font-size: 18px;
+  font-weight: 700;
+  color: #f8fafc;
+  margin: 0;
+}
+
+.guideCloseButton {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: #94a3b8;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 150ms ease;
+  flex-shrink: 0;
+}
+
+.guideCloseButton:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.guideModalBody {
+  padding: 20px 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.guideGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.guideCard {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.guideCardIcon {
+  font-size: 22px;
+  margin-bottom: 8px;
+}
+
+.guideCardTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin: 0 0 6px;
+}
+
+.guideCardText {
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.5;
+  margin: 0 0 10px;
+}
+
+.guideBulletList {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 11px;
+  color: #cbd5e1;
+  line-height: 1.6;
+}
+
+.guideBulletList li {
+  margin-bottom: 4px;
+}
+
+.guideShortcutGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.shortcutRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.shortcutRow kbd {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: #e2e8f0;
+  white-space: nowrap;
+}
+
+.guideModalFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.guideFooterHint {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.guideSubmitButton {
+  padding: 8px 18px;
+  border-radius: 8px;
+  border: none;
+  background: #6366f1;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.4);
+  transition: all 160ms ease;
+  white-space: nowrap;
+}
+
+.guideSubmitButton:hover {
+  background: #4f46e5;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.6);
+  transform: translateY(-0.5px);
+}
+
+@media (max-width: 640px) {
+  .guideGrid {
+    grid-template-columns: 1fr;
+  }
+  .guideModalFooter {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+

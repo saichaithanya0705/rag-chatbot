@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import unittest
 
-from app.services.rag_retrieval_policy import (
+from app.services.rag.rag_retrieval_policy import (
     build_fts_query,
     rerank_pool_limit,
     rrf_score,
     select_final_chunks,
     select_rerank_candidate_pool,
     should_query_flat_collection,
-    should_rerank_candidates,
 )
-from app.services.rag_types import CandidateChunk
+from app.services.rag.rag_types import CandidateChunk
 
 
 def _candidate(
@@ -120,65 +119,6 @@ class RagRetrievalPolicyTests(unittest.TestCase):
 
         self.assertEqual([candidate.chunk_id for candidate in selected], ["c3", "c2", "c1"])
 
-    def test_rerank_decision_skips_clear_dominant_rankings(self) -> None:
-        candidates = [
-            _candidate(
-                "c1",
-                document_id="doc-1",
-                collection_id="topic-a",
-                fused_score=rrf_score(0),
-            ),
-            _candidate(
-                "c2",
-                document_id="doc-1",
-                collection_id="topic-a",
-                fused_score=rrf_score(1),
-            ),
-            _candidate(
-                "c3",
-                document_id="doc-1",
-                collection_id="topic-a",
-                fused_score=rrf_score(2),
-            ),
-            _candidate(
-                "c4",
-                document_id="doc-1",
-                collection_id="topic-a",
-                fused_score=rrf_score(3),
-            ),
-        ]
-
-        self.assertFalse(
-            should_rerank_candidates(
-                question="What is CPU scheduling?",
-                ordered_candidates=candidates,
-                top_k=3,
-            )
-        )
-
-    def test_rerank_decision_keeps_comparison_queries_rerankable(self) -> None:
-        candidates = [
-            _candidate(
-                "c1",
-                document_id="doc-1",
-                collection_id="topic-a",
-                fused_score=rrf_score(0),
-            ),
-            _candidate(
-                "c2",
-                document_id="doc-1",
-                collection_id="topic-a",
-                fused_score=rrf_score(1),
-            ),
-        ]
-
-        self.assertTrue(
-            should_rerank_candidates(
-                question="Compare CPU scheduling and memory paging",
-                ordered_candidates=candidates,
-                top_k=3,
-            )
-        )
 
 
 if __name__ == "__main__":

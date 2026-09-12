@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import unittest
 
-from app.services.rag_citations import (
+from app.services.rag.rag_citations import (
     citation_from_context,
     source_metadata_from_metadata,
     pdf_context_from_chunk,
     retrieved_chunk_from_candidate,
 )
-from app.services.rag_types import CandidateChunk, RetrievedContext
+from app.services.rag.rag_types import CandidateChunk, RetrievedContext
 
 
 class RagCitationMappingTests(unittest.TestCase):

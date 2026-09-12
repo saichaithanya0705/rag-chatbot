@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from app.services.opendataloader_parser import OpenDataLoaderDocumentParser
+from app.services.ingestion.opendataloader_parser import OpenDataLoaderDocumentParser
 
 
 class OpenDataLoaderDocumentParserTests(unittest.TestCase):

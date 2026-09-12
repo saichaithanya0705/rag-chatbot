@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { KnowledgeGraph } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
 import {
@@ -16,6 +16,9 @@ import { useGraphFilters } from "./useGraphFilters";
 import { useGraphSelection } from "./useGraphSelection";
 import { GraphToolbar } from "./GraphToolbar";
 import { GraphCanvas } from "./GraphCanvas";
+import { Graph3DCanvas, type Graph3DControls } from "./Graph3DCanvas";
+import { GraphGuideModal } from "./GraphGuideModal";
+import { AppNavTabs } from "@/shared/ui/app-nav/AppNavTabs";
 
 interface KnowledgeGraphExplorerProps {
   activeCollectionId: string;
@@ -30,7 +33,10 @@ export function KnowledgeGraphExplorer({
   onOpenPipeline,
   onOpenTopic,
 }: KnowledgeGraphExplorerProps) {
+  const graph3dRef = useRef<Graph3DControls>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [viewMode, setViewMode] = useState<"3d" | "2d">("3d");
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
   const {
     searchQuery,
     setSearchQuery,
@@ -78,11 +84,12 @@ export function KnowledgeGraphExplorer({
   const summary = useMemo(() => buildKnowledgeGraphSummary(graph), [graph]);
   const documents = useMemo(() => uniqueDocuments(graph), [graph]);
 
+  const neighborhoodRootId = hopDepth > 0 ? selectedNodeId : null;
   const visibleGraph = useMemo(() => {
     let searched = filterKnowledgeGraph(graph, searchQuery);
 
-    if (selectedNodeId && hopDepth > 0) {
-      const allowedNodes = getNodesWithinHops(searched, selectedNodeId, hopDepth);
+    if (neighborhoodRootId) {
+      const allowedNodes = getNodesWithinHops(searched, neighborhoodRootId, hopDepth);
       searched = {
         nodes: searched.nodes.filter((n) => allowedNodes.has(n.id)),
         edges: searched.edges.filter((e) => allowedNodes.has(e.source) && allowedNodes.has(e.target)),
@@ -99,7 +106,7 @@ export function KnowledgeGraphExplorer({
         (edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target) && edge.weight >= minWeight,
       ),
     };
-  }, [documentFilter, graph, hopDepth, minWeight, searchQuery, selectedNodeId]);
+  }, [documentFilter, graph, hopDepth, minWeight, searchQuery, neighborhoodRootId]);
 
   const layout = useMemo(() => buildGraphLayout(visibleGraph), [visibleGraph]);
   const selectedNode = layout?.nodes.find((node) => node.id === selectedNodeId) ?? null;
@@ -166,12 +173,6 @@ export function KnowledgeGraphExplorer({
   return (
     <div className={cn(styles.explorer, isFullscreen && styles.explorerFullscreen)}>
       <header className={styles.header}>
-        <button className={styles.backButton} onClick={onOpenPipeline} type="button">
-          <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 16 16" width="16">
-            <path d="M10 3L5 8L10 13" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
-          </svg>
-          Pipeline
-        </button>
         <div className={styles.titleBlock}>
           <h1 className={styles.title}>Knowledge graph</h1>
           <p className={styles.subhead}>Explore topic relationships and inspect the evidence behind each connection.</p>
@@ -183,9 +184,18 @@ export function KnowledgeGraphExplorer({
             <span>{summary.documentCount} PDFs</span>
           </div>
           <button
+            aria-label="3D Navigation and Knowledge Graph Guide"
+            className={styles.iconButton}
+            onClick={() => setIsGuideOpen(true)}
+            title="Open 3D Navigation Guide"
+            type="button"
+          >
+            <span style={{ fontSize: 16 }}>💡</span>
+          </button>
+          <button
             aria-label="Export as PNG"
             className={styles.iconButton}
-            onClick={exportAsPng}
+            onClick={() => viewMode === "3d" ? graph3dRef.current?.exportPng() : exportAsPng()}
             title="Export as PNG"
             type="button"
           >
@@ -212,6 +222,7 @@ export function KnowledgeGraphExplorer({
               </svg>
             )}
           </button>
+          <AppNavTabs />
         </div>
       </header>
 
@@ -225,40 +236,76 @@ export function KnowledgeGraphExplorer({
         onMinWeightChange={setMinWeight}
         hopDepth={hopDepth}
         onHopDepthChange={setHopDepth}
-        onFitToView={() => fitToView(layout)}
-        onResetView={resetView}
+        onFitToView={() => viewMode === "3d" ? graph3dRef.current?.fit() : fitToView(layout)}
+        onResetView={() => viewMode === "3d" ? graph3dRef.current?.fit() : resetView()}
         onClearSelection={clearSelection}
+        onOpenGuide={() => setIsGuideOpen(true)}
       />
 
+      {hasGraphData && summary.relationshipCount === 0 && (
+        <div className={styles.sparseBanner}>
+          <div className={styles.sparseBannerContent}>
+            <span className={styles.sparseBannerIcon}>💡</span>
+            <span className={styles.sparseBannerText}>
+              <strong>No relationships found yet:</strong> Re-cluster topics in the PDF Pipeline to compute semantic links across documents.
+            </span>
+          </div>
+          <button className={styles.sparseBannerButton} onClick={onOpenPipeline} type="button">
+            Go to Pipeline &amp; Re-cluster ➔
+          </button>
+        </div>
+      )}
+
       <div className={styles.workspace}>
-        <GraphCanvas
-          containerRef={containerRef}
-          svgRef={svgRef}
-          layout={layout}
-          isPanning={isPanning}
-          viewBox={viewBox}
-          zoom={zoom}
-          panX={panX}
-          panY={panY}
-          selectedNodeId={selectedNodeId}
-          selectedEdgeKey={selectedEdgeKey}
-          hoveredEdgeKey={hoveredEdgeKey}
-          activeCollectionId={activeCollectionId}
-          connectionCountByNode={connectionCountByNode}
-          selectedNeighborIds={selectedNeighborIds}
-          mostConnectedNodeConnections={summary.mostConnectedNode?.connections || 1}
-          hasGraphData={hasGraphData}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onWheel={handleWheel}
-          onSelectNode={selectNode}
-          onSelectEdge={selectEdge}
-          onHoveredEdgeKeyChange={setHoveredEdgeKey}
-          onResetView={resetView}
-          onAnimateCameraTo={animateCameraTo}
-          visibleEdges={visibleGraph.edges}
-        />
+        {viewMode === "3d" ? (
+          <Graph3DCanvas
+            controlsRef={graph3dRef}
+            activeCollectionId={activeCollectionId}
+            connectionCountByNode={connectionCountByNode}
+            hasGraphData={hasGraphData}
+            layout={layout}
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onSelectEdge={selectEdge}
+            onSelectNode={selectNode}
+            onViewModeChange={setViewMode}
+            selectedEdgeKey={selectedEdgeKey}
+            selectedNeighborIds={selectedNeighborIds}
+            selectedNodeId={selectedNodeId}
+            viewMode={viewMode}
+          />
+        ) : (
+          <GraphCanvas
+            activeCollectionId={activeCollectionId}
+            connectionCountByNode={connectionCountByNode}
+            containerRef={containerRef}
+            hasGraphData={hasGraphData}
+            hoveredEdgeKey={hoveredEdgeKey}
+            isPanning={isPanning}
+            layout={layout}
+            mostConnectedNodeConnections={summary.mostConnectedNode?.connections || 1}
+            onAnimateCameraTo={animateCameraTo}
+            onHoveredEdgeKeyChange={setHoveredEdgeKey}
+            onOpenGuide={() => setIsGuideOpen(true)}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onResetView={resetView}
+            onSelectEdge={selectEdge}
+            onSelectNode={selectNode}
+            onViewModeChange={setViewMode}
+            onWheel={handleWheel}
+            panX={panX}
+            panY={panY}
+            selectedEdgeKey={selectedEdgeKey}
+            selectedNeighborIds={selectedNeighborIds}
+            selectedNodeId={selectedNodeId}
+            svgRef={svgRef}
+            viewBox={viewBox}
+            viewMode={viewMode}
+            visibleEdges={visibleGraph.edges}
+            zoom={zoom}
+          />
+        )}
 
         <aside className={styles.inspector} aria-label="Knowledge graph details">
           {selectedEdge ? (
@@ -278,6 +325,8 @@ export function KnowledgeGraphExplorer({
           )}
         </aside>
       </div>
+
+      <GraphGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
     </div>
   );
 }

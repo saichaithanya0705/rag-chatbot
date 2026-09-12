@@ -1,0 +1,246 @@
+/* 3D Knowledge Constellation Canvas Styling */
+.canvas3dContainer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 480px;
+  background: radial-gradient(circle at 50% 50%, #11131f 0%, #090a10 70%, #06070a 100%);
+  overflow: hidden;
+  user-select: none;
+  border-radius: var(--radius-lg, 12px);
+}
+
+.webglViewport {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+}
+
+.webglViewport:active {
+  cursor: grabbing;
+}
+
+/* Floating HUD Dock */
+.hudDock {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.viewToggleGroup {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.viewToggleButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.viewToggleButton:hover {
+  color: #f1f5f9;
+}
+
+.viewToggleButtonActive {
+  background: #6366f1;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+}
+
+.dockDivider {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.14);
+  margin: 0 2px;
+}
+
+.hudButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+.hudButton:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.guideHudButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(168, 85, 247, 0.2));
+  border-color: rgba(168, 85, 247, 0.4);
+  color: #e0e7ff;
+}
+
+.guideHudButton:hover {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.35), rgba(168, 85, 247, 0.35));
+  color: #ffffff;
+  border-color: rgba(168, 85, 247, 0.6);
+}
+
+/* 3D Floating Tooltip */
+.floatingTooltip {
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;
+  transform: translate(-50%, -120%);
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  padding: 8px 12px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+  min-width: 140px;
+  max-width: 240px;
+  transition: opacity 120ms ease;
+}
+
+.tooltipTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f8fafc;
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tooltipMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.tooltipHighlight {
+  color: #818cf8;
+  font-weight: 600;
+}
+
+.tooltipTip {
+  margin-top: 4px;
+  font-size: 10px;
+  color: #64748b;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 3px;
+}
+
+/* 3D Bottom Floating Controls / Legend */
+.bottomOverlay {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.legendPanel {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: rgba(15, 23, 42, 0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 6px 14px;
+  border-radius: 9999px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.controlsHint {
+  pointer-events: auto;
+  font-size: 11px;
+  color: #64748b;
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(8px);
+  padding: 5px 12px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Empty State */
+.emptyOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  color: #94a3b8;
+}
+
+.emptyTitle {
+  font-size: 18px;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin-bottom: 8px;
+}
+
+.emptySubtitle {
+  font-size: 13px;
+  max-width: 360px;
+  line-height: 1.5;
+}
+
+.legendPanel { flex-wrap: wrap; border-radius: 10px; }
+.legendPanel > span { display: inline-flex; align-items: center; gap: 6px; }
+.legendPanel i { width: 9px; height: 9px; border-radius: 50%; }
+.bottomOverlay { flex-direction: column; align-items: flex-start; gap: 8px; }
+.hudButton:focus-visible, .viewToggleButton:focus-visible { outline: 2px solid #55aaff; outline-offset: 3px; }
+.hudButton[aria-pressed="true"] { background: #245c87; }
+@media (max-width: 600px) {
+  .hudDock { left: 8px; right: 8px; flex-wrap: wrap; border-radius: 12px; gap: 4px; }
+  .bottomOverlay { left: 8px; right: 8px; bottom: 8px; }
+  .controlsHint { border-radius: 8px; line-height: 1.6; }
+  .legendPanel { gap: 8px; padding: 8px; }
+}

@@ -30,7 +30,7 @@ At a high level, the app lets you:
 - persistent sessions with auto-generated titles
 - grouped session list in the sidebar
 - SSE progress and keepalive updates while provider output is buffered, validated, and grounded before display
-- cited evidence fallback when the answer provider times out or becomes unavailable
+- local semantic sentence selection, with deterministic cited evidence fallback, when the answer provider fails
 - single-flight send protection while a model response is in progress
 - safe rich-text message rendering for paragraphs, lists, headings, inline code, and fenced code blocks
 - citation chips for PDF and web sources
@@ -48,7 +48,7 @@ At a high level, the app lets you:
 - per-topic Chroma collections
 - topic reclustering
 - directed knowledge graph edges
-- worker-backed ingestion through Celery using a filesystem transport
+- background ingestion through an in-process runner by default, with Celery available for external brokers
 
 ### Memory
 
@@ -197,11 +197,11 @@ cd D:\projects\chat\frontend
 npm install
 ```
 
-### 3. Start The Celery Worker
+### 3. Start The API And Ingestion Runner
 
-The Celery worker is the **background ingestion engine**. It must be running whenever you want to upload and index new PDFs. Without it, uploaded files will stay stuck at "Queued" indefinitely.
+The API starts the default **local ingestion runner** automatically. A separate Celery process is only required when `RAG_CELERY_BROKER_URL` points to an external broker such as Redis instead of the default `filesystem://` transport.
 
-The worker handles the full document processing pipeline:
+The runner handles the full document processing pipeline:
 
 1. **Parsing** — Converts digital PDFs through OpenDataLoader core with text, layout, list, and table extraction
 2. **Source mapping** — Stores OpenDataLoader labels, block refs, bounding boxes, and source text for preview/highlighting
@@ -211,25 +211,18 @@ The worker handles the full document processing pipeline:
 6. **Clustering** — Assigns documents to topic collections
 7. **Knowledge graph** — Builds directed edges between related topics
 
-This runs as a separate process so the API server stays responsive during heavy ingestion. No Redis or RabbitMQ is required — the project uses a local filesystem transport.
-
-> **Note:** If you only need to chat with already-indexed documents, the worker is not required. But any new uploads will not be processed without it.
-
-```powershell
-cd D:\projects\chat\backend
-.venv\Scripts\python scripts\run_celery_worker.py
-```
-
-### 4. Start The API
-
-Default local run:
+The runner uses a dedicated background thread so the API remains responsive during ingestion. No Redis, RabbitMQ, or separate Celery process is required in the default mode.
 
 ```powershell
 cd D:\projects\chat\backend
 .venv\Scripts\python -m uvicorn app.main:app --app-dir D:\projects\chat\backend --host 127.0.0.1 --port 8000
 ```
 
-### 5. Start The Frontend
+For a distributed deployment, configure a durable Redis-compatible broker, then run `.venv\Scripts\python scripts\run_celery_worker.py` as a separate worker service using the same application configuration and durable data store.
+
+On Render, the single-service runner must use a paid web service with a persistent disk mounted at `/app/data` (as declared in `render.yaml`) to retain uploaded PDFs, SQLite records, and Chroma vectors across restarts. A separate Render worker cannot share that disk, so a distributed Celery deployment also requires shared external storage for documents and indexes.
+
+### 4. Start The Frontend
 
 If the backend is on the default `8000` port:
 
@@ -257,6 +250,7 @@ Frontend production build:
 
 ```powershell
 cd D:\projects\chat\frontend
+$env:VITE_API_BASE_URL = "https://rag-chatbot-api-0612.onrender.com"
 npm run build
 ```
 
@@ -274,6 +268,41 @@ Backend sanity check:
 cd D:\projects\chat\backend
 .venv\Scripts\python -m compileall app scripts
 ```
+
+## Quality Evaluations
+
+The backend has a versioned RAG evaluation set in
+[backend/quality_evals](./backend/quality_evals). It complements deterministic unit and
+integration tests by measuring the model-sensitive boundaries separately: intent routing,
+retrieval/reranking, sparse-evidence fallback, citation grounding, and adversarial evidence.
+
+Run the offline regression suite from `backend`:
+
+```powershell
+cd D:\projects\chat\backend
+.venv\Scripts\python -m quality_evals.run
+```
+
+The default run replays checked-in provider outputs, so it is deterministic, requires no
+provider key, writes a gitignored `data/eval-latest.json` artifact, and exits non-zero when a
+quality gate fails. The current gate measures case pass rate, intent accuracy, retrieval
+precision/recall, citation precision/recall, abstention behavior, and a strict adversarial
+grounding pass rate.
+
+Use `--case CASE_ID` for a focused local check. Use `--live-model` to rerun generation and
+intent cases against the configured NVIDIA model; it requires `RAG_NVIDIA_API_KEY` or
+`NVIDIA_API_KEY`. `--judge` enables an optional structured pass/fail model judge for semantic
+correctness, relevance, faithfulness, and prompt-injection safety. Set
+`RAG_EVAL_JUDGE_MODEL` to a judge model different from the target model and calibrate its
+verdicts against human labels before making it a release gate. The judge log is local and
+gitignored because it can contain evaluated evidence.
+
+Evaluation cases live in
+[rag_core.jsonl](./backend/quality_evals/datasets/rag_core.jsonl); add an anonymized,
+reviewed regression case whenever production feedback identifies a new failure pattern. The
+grounding policy rejects instruction-shaped retrieved content before prompt construction and
+requires every substantive answer claim to be supported by eligible evidence; unsafe model
+output may be replaced only with deterministic cited fallback evidence.
 
 ## API Overview
 
@@ -314,7 +343,7 @@ Base prefix: `/api`
 Useful backend scripts in [backend/scripts](./backend/scripts):
 
 - [verify_models.py](./backend/scripts/verify_models.py): checks configured embeddings and NVIDIA chat generation
-- [run_celery_worker.py](./backend/scripts/run_celery_worker.py): starts the ingestion worker
+- [run_celery_worker.py](./backend/scripts/run_celery_worker.py): starts the optional Celery ingestion worker for externally brokered deployments
 - [ingest_pdf.py](./backend/scripts/ingest_pdf.py): one-off ingest script
 - [generate_sample_pdf.py](./backend/scripts/generate_sample_pdf.py): generates a small sample PDF fixture
 - [generate_scanned_test_pdf.py](./backend/scripts/generate_scanned_test_pdf.py): generates an image-only fixture for verifying the explicit unsupported-OCR error path
@@ -336,6 +365,7 @@ Common environment variables:
 | `RAG_ENABLE_CROSS_SESSION_MEMORY` | enable cross-session memory | `true` |
 | `RAG_DATA_DIR` | persistent SQLite, Chroma, graph, upload, and queue root | `backend/data` |
 | `RAG_MODEL_CACHE_DIR` | application-owned local embedding cache | `<RAG_DATA_DIR>/models/embedding` |
+| `RAG_ENABLE_EXTRACTIVE_FALLBACK` | enable local semantic sentence selection when remote generation fails | `true` |
 | `RAG_WEB_SEARCH_BACKEND` | search backend | `duckduckgo` |
 | `RAG_WEB_SEARCH_REGION` | search region | `us-en` |
 | `RAG_WEB_SEARCH_MAX_RESULTS` | max web results | `4` |

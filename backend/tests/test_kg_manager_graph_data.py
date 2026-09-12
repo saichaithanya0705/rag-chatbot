@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.services.kg_manager import KgManager, TopicNodeRecord
+from app.services.knowledge.kg_manager import KgManager, TopicNodeRecord
 
 
 class KgManagerGraphDataTest(unittest.TestCase):

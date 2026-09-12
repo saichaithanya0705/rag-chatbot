@@ -13,9 +13,9 @@ class _Context:
 
 def _grounding_module():
     try:
-        return importlib.import_module("app.services.rag_grounding")
+        return importlib.import_module("app.services.rag.rag_grounding")
     except ModuleNotFoundError as error:
-        if error.name == "app.services.rag_grounding":
+        if error.name == "app.services.rag.rag_grounding":
             raise AssertionError("rag grounding helper module should exist") from error
         raise
 
@@ -67,6 +67,7 @@ class RagGroundingHelperTests(unittest.TestCase):
 
         fallback = grounding.compose_fallback_answer(
             [web_context, pdf_context],
+            question="What is a process?",
             generation_warning=warning,
             extract_direct_qa_pair=_extract_direct_qa_pair,
         )
@@ -75,7 +76,7 @@ class RagGroundingHelperTests(unittest.TestCase):
         self.assertEqual(fallback.citation_contexts, (pdf_context,))
         self.assertEqual(fallback.generation_warning, warning)
 
-    def test_fallback_answer_uses_first_two_cleaned_passages_without_direct_qa(self) -> None:
+    def test_fallback_answer_uses_only_relevant_passages_without_direct_qa(self) -> None:
         grounding = _grounding_module()
         first_context = _Context(kind="pdf", text="Page 4\nUseful process detail.\n\nCopyright 2026")
         second_context = _Context(kind="web", text="Additional scheduling detail.")
@@ -83,12 +84,13 @@ class RagGroundingHelperTests(unittest.TestCase):
 
         fallback = grounding.compose_fallback_answer(
             [first_context, second_context, third_context],
+            question="What is a process?",
             generation_warning="Used retrieved evidence fallback.",
             extract_direct_qa_pair=lambda _text: None,
         )
 
-        self.assertEqual(fallback.answer, "Useful process detail.\n\nAdditional scheduling detail.")
-        self.assertEqual(fallback.citation_contexts, (first_context, second_context))
+        self.assertEqual(fallback.answer, "Useful process detail.")
+        self.assertEqual(fallback.citation_contexts, (first_context,))
 
 
 if __name__ == "__main__":

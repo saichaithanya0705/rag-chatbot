@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWorkbench } from "@/app/providers/workbench/WorkbenchProvider";
 import { cn } from "@/shared/lib/cn";
+import { AppNavTabs } from "@/shared/ui/app-nav/AppNavTabs";
 import { ChatComposer } from "@/widgets/chat-shell/ChatComposer";
 import { MessageThread } from "@/widgets/chat-shell/MessageThread";
 import baseStyles from "@/widgets/workbench-frame/workbench-frame.module.css";
@@ -395,20 +396,7 @@ export function ChatView({ active }: ChatViewProps) {
             </div>
           )}
         </div>
-        <button
-          aria-label="Open the PDF pipeline"
-          className={cn(styles.iconBtn, styles.pipelineNavBtn)}
-          onClick={() => void navigate("/pipeline")}
-          type="button"
-        >
-          <svg fill="none" height="15" viewBox="0 0 16 16" width="15">
-            <rect height="5" rx="1" stroke="currentColor" strokeWidth="1.2" width="5" x="2" y="2" />
-            <rect height="5" rx="1" stroke="currentColor" strokeWidth="1.2" width="5" x="9" y="2" />
-            <rect height="5" rx="1" stroke="currentColor" strokeWidth="1.2" width="5" x="2" y="9" />
-            <rect height="5" rx="1" stroke="currentColor" strokeWidth="1.2" width="5" x="9" y="9" />
-          </svg>
-          <span className={styles.pipelineBtnText}>PDFs</span>
-        </button>
+        <AppNavTabs />
       </div>
 
       <MessageThread />

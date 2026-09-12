@@ -47,7 +47,7 @@ export function buildKnowledgeGraphSummary(graph: KnowledgeGraph): KnowledgeGrap
   for (const node of graph.nodes) {
     const connections = connectionCounts.get(node.id) ?? 0;
     if (connections === 0) isolatedNodeCount++;
-    if (!mostConnectedNode || connections > mostConnectedNode.connections) {
+    if (connections >= 2 && (!mostConnectedNode || connections > mostConnectedNode.connections)) {
       mostConnectedNode = { label: node.label, connections };
     }
   }

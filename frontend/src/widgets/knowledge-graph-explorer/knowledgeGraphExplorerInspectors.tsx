@@ -51,8 +51,9 @@ export function NodeInspector({
   onSelectEdge: (edge: KnowledgeGraphEdge) => void;
   summary: ReturnType<typeof buildKnowledgeGraphSummary>;
 }) {
-  const isHub = summary.mostConnectedNode?.label === node.label;
-  const isIsolated = edges.length === 0;
+  const isHub = edges.length >= 3 || (Boolean(summary.mostConnectedNode) && summary.mostConnectedNode?.label === node.label && edges.length >= 2);
+  const isConnected = edges.length > 0 && !isHub;
+  const isStandalone = edges.length === 0;
 
   return (
     <div className={styles.inspectorSection}>
@@ -63,36 +64,69 @@ export function NodeInspector({
           <svg fill="none" height="12" viewBox="0 0 24 24" width="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
           </svg>
-          Primary Hub
+          Core Hub ({edges.length} links)
         </div>
       )}
 
-      {isIsolated && (
+      {isConnected && (
+        <div className={styles.connectedBadge}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+          </svg>
+          Connected Topic ({edges.length} links)
+        </div>
+      )}
+
+      {isStandalone && (
         <div className={styles.isolatedBadge}>
-          Isolated topic
+          📌 Standalone Topic
         </div>
       )}
 
       <div className={styles.metaLine}>
-        {node.documentCount} PDFs · {node.chunkCount} chunks · {edges.length} links
+        {node.documentCount} {node.documentCount === 1 ? "PDF" : "PDFs"} · {node.chunkCount} chunks · {edges.length} links
       </div>
+
       <button className={styles.primaryAction} onClick={() => onOpenTopic(node.id)} type="button">
-        {active ? "Open current chat scope" : "Open in chat"}
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+        {active ? "Currently scoped in chat" : "Ask chat about this topic ➔"}
       </button>
-      <EvidenceList title="Keywords" values={getNodeKeywords(node)} />
-      <EvidenceList title="Source PDFs" values={getNodeDocuments(node)} />
-      <EvidenceList title="Pages" values={node.pageKeys.map(compactPageLabel)} limit={8} />
+
+      {isStandalone && (
+        <div className={styles.standaloneTip}>
+          <span>💡</span>
+          <div>
+            <strong>Standalone concept:</strong> No cross-document links formed yet. Uploading complementary PDFs or lowering the minimum strength slider connects related topics.
+          </div>
+        </div>
+      )}
+
+      <EvidenceList title="Key Concept Keywords" values={getNodeKeywords(node)} />
+      <EvidenceList title="Source PDF Documents" values={getNodeDocuments(node)} />
+      <EvidenceList title="Cited Page References" values={node.pageKeys.map(compactPageLabel)} limit={8} />
+
       <div className={styles.relationshipList}>
-        <h3>Connected topics</h3>
+        <h3>Connected topics ({edges.length})</h3>
         {edges.length === 0 ? (
-          <p className={styles.helpText}>No visible relationships match the current filters.</p>
+          <p className={styles.helpText}>No connected topics match the current filter.</p>
         ) : (
           edges.map((edge) => {
             const otherNode = nodeLookup.get(getOtherNodeId(edge, node.id));
+            const percent = Math.round(edge.weight * 100);
             return (
               <button className={styles.relationshipButton} key={edgeKey(edge)} onClick={() => onSelectEdge(edge)} type="button">
-                <span>{otherNode?.label ?? getOtherNodeId(edge, node.id)}</span>
-                <strong>{formatPercent(edge.weight)}</strong>
+                <div className={styles.relButtonMain}>
+                  <span className={styles.relButtonTitle}>{otherNode?.label ?? getOtherNodeId(edge, node.id)}</span>
+                  <div className={styles.strengthMeter}>
+                    <div className={styles.strengthTrack}>
+                      <div className={styles.strengthFill} style={{ width: `${percent}%` }} />
+                    </div>
+                    <span className={styles.strengthLabel}>{percent}%</span>
+                  </div>
+                </div>
               </button>
             );
           })
@@ -103,26 +137,45 @@ export function NodeInspector({
 }
 
 export function EdgeInspector({ edge }: { edge: ExplorerLink }) {
+  const scores = [
+    { label: "Overall Correlation", value: edge.weight },
+    { label: "Semantic Similarity", value: edge.semanticScore },
+    { label: "Page Overlap", value: edge.pageOverlapScore },
+    { label: "Document Overlap", value: edge.documentOverlapScore },
+  ];
+
   return (
     <div className={styles.inspectorSection}>
-      <h2>Relationship evidence</h2>
+      <h2>Relationship Evidence</h2>
       <div className={styles.metaLine}>
-        {edge.sourceNode.label} → {edge.targetNode.label}
+        {edge.sourceNode.label} ⟷ {edge.targetNode.label}
       </div>
       <p className={styles.reason}>{describeRelationshipReason(edge)}</p>
-      <dl className={styles.scoreList}>
-        <div><dt>Strength</dt><dd>{formatPercent(edge.weight)}</dd></div>
-        <div><dt>Semantic</dt><dd>{formatPercent(edge.semanticScore)}</dd></div>
-        <div><dt>Page overlap</dt><dd>{formatPercent(edge.pageOverlapScore)}</dd></div>
-        <div><dt>Document overlap</dt><dd>{formatPercent(edge.documentOverlapScore)}</dd></div>
-      </dl>
-      <EvidenceList title="Shared PDFs" values={edge.sharedDocuments ?? []} />
-      <EvidenceList title="Shared pages" values={(edge.sharedPages ?? []).map(compactPageLabel)} />
+
+      <div className={styles.edgeScoreBars}>
+        {scores.map((score) => (
+          <div className={styles.edgeScoreRow} key={score.label}>
+            <div className={styles.edgeScoreHeader}>
+              <span className={styles.edgeScoreLabel}>{score.label}</span>
+              <span className={styles.edgeScoreVal}>{formatPercent(score.value)}</span>
+            </div>
+            <div className={styles.edgeScoreTrack}>
+              <div
+                className={styles.edgeScoreFill}
+                style={{ width: `${Math.round((score.value ?? 0) * 100)}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <EvidenceList title="Shared PDF Documents" values={edge.sharedDocuments ?? []} />
+      <EvidenceList title="Shared Document Pages" values={(edge.sharedPages ?? []).map(compactPageLabel)} />
     </div>
   );
 }
 
-function EvidenceList({ limit = 6, title, values }: { limit?: number; title: string; values: string[] }) {
+function EvidenceList({ limit = 8, title, values }: { limit?: number; title: string; values: string[] }) {
   const visibleValues = values.slice(0, limit);
   return (
     <div className={styles.evidenceGroup}>
@@ -130,14 +183,16 @@ function EvidenceList({ limit = 6, title, values }: { limit?: number; title: str
       {visibleValues.length === 0 ? (
         <p className={styles.helpText}>No evidence recorded.</p>
       ) : (
-        <ul>
+        <div className={styles.chipList}>
           {visibleValues.map((value) => (
-            <li key={value}>{value}</li>
+            <span className={styles.chip} key={value} title={value}>
+              {value}
+            </span>
           ))}
-        </ul>
+        </div>
       )}
       {values.length > visibleValues.length ? (
-        <div className={styles.moreText}>{values.length - visibleValues.length} more</div>
+        <div className={styles.moreText}>+{values.length - visibleValues.length} more</div>
       ) : null}
     </div>
   );

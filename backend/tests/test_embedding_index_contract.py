@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from app.core.database import Database
-from app.services.embedding_index_service import EmbeddingIndexService
+from app.services.providers.embedding_index_service import EmbeddingIndexService
 
 
 class _FakeChromaStore:

@@ -11,11 +11,11 @@ from fastapi.responses import StreamingResponse
 
 from app.dependencies import get_container, get_user_id
 from app.models.schemas import ChatRequest, ChatResponse
-from app.services.answer_trace import build_answer_trace
+from app.services.chat.answer_trace import build_answer_trace
 
 if TYPE_CHECKING:
     from app.services.container import ServiceContainer
-    from app.services.rag_types import FinalizedAnswer, PreparedAnswer
+    from app.services.rag.rag_types import FinalizedAnswer, PreparedAnswer
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 KEEPALIVE_INTERVAL_SECONDS = 8.0
@@ -611,6 +611,7 @@ async def _stream_finalized_answer(
             finalized = container.rag_service.finalize_streamed_answer(
                 "".join(raw_answer_parts),
                 prepared.contexts,
+                question=prepared.question,
                 model_thinking=None,
             )
             if include_thinking:
@@ -647,7 +648,8 @@ async def _stream_finalized_answer(
                     "Answer stream provider failed; falling back to retrieved evidence.",
                     exc_info=True,
                 )
-                return container.rag_service.fallback_from_contexts(
+                return await container.rag_service.resolve_generation_fallback(
+                    prepared.question,
                     prepared.contexts,
                     reason="stream_interrupted",
                 )

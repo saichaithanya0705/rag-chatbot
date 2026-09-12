@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useWorkbench } from "@/app/providers/workbench/WorkbenchProvider";
 import type { PipelineDocument, PipelineStatus } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
+import { AppNavTabs } from "@/shared/ui/app-nav/AppNavTabs";
 import { SectionLabel } from "@/shared/ui/section-label/SectionLabel";
 import { StatusPill } from "@/shared/ui/status-pill/StatusPill";
 import { SurfaceCard } from "@/shared/ui/surface-card/SurfaceCard";
@@ -28,11 +29,11 @@ function statusLabel(status: PipelineStatus) {
   }
 
   if (status === "parsing") {
-    return "OpenDataLoader parsing…";
+    return "Parsing document…";
   }
 
   if (status === "ocr") {
-    return "Analyzing document…";
+    return "Analyzing layout…";
   }
 
   if (status === "chunking") {
@@ -109,23 +110,21 @@ function AccordionSection({ actions, children, defaultOpen = true, title }: Acco
       }}
       open={open}
     >
-      <div className={styles.accordionHeader}>
-        <summary className={styles.accordionSummary}>
-          <div className={styles.accordionSummaryHeading}>
-            <svg className={styles.accordionChevron} fill="none" height="14" viewBox="0 0 14 14" width="14">
-              <path
-                d="M4.5 2.75L8.75 7L4.5 11.25"
-                stroke="currentColor"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="1.5"
-              />
-            </svg>
-            <SectionLabel as="h2">{title}</SectionLabel>
-          </div>
-        </summary>
+      <summary className={styles.accordionSummary}>
+        <div className={styles.accordionSummaryHeading}>
+          <svg className={styles.accordionChevron} fill="none" height="14" viewBox="0 0 14 14" width="14">
+            <path
+              d="M4.5 2.75L8.75 7L4.5 11.25"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="1.5"
+            />
+          </svg>
+          <SectionLabel as="h2">{title}</SectionLabel>
+        </div>
         {actions ? <div className={styles.accordionActions}>{actions}</div> : null}
-      </div>
+      </summary>
       <div className={styles.accordionContent}>{children}</div>
     </details>
   );
@@ -139,6 +138,7 @@ export function PipelineView({ active }: PipelineViewProps) {
   const [dragOver, setDragOver] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
+  const [expandedErrorDocId, setExpandedErrorDocId] = useState<string | null>(null);
   const collectionOptions =
     state.collections.length > 0 ? state.collections : [{ id: "all-pdfs", label: "All PDFs" }];
   const activeCollectionId = state.activeCollectionId || "all-pdfs";
@@ -232,7 +232,7 @@ export function PipelineView({ active }: PipelineViewProps) {
             }}
             type="button"
           >
-            Delete now
+            Delete
           </button>
           <button
             aria-label={`Cancel delete ${documentName}`}
@@ -260,8 +260,11 @@ export function PipelineView({ active }: PipelineViewProps) {
           handleDeleteIntent(documentId);
         }}
         type="button"
+        title="Delete document"
       >
-        ×
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+        </svg>
       </button>
     );
   }
@@ -274,12 +277,38 @@ export function PipelineView({ active }: PipelineViewProps) {
           <div className={styles.fileInfo}>
             <div className={styles.fileTitleRow}>
               <div className={styles.fileName}>{document.name}</div>
-              <div className={styles.fileMeta}>
-                {document.metaLabel ??
-                  `${document.sizeLabel} · ${document.pageCount} pages${
-                    document.addedLabel ? ` · ${document.addedLabel}` : ""
-                  }`}
-              </div>
+              {document.status === "error" ? (
+                <div className={styles.fileErrorBlock}>
+                  <div className={styles.fileErrorHeader}>
+                    <span className={styles.fileErrorBadge}>Ingestion failed</span>
+                    {document.metaLabel ? (
+                      <button
+                        className={styles.errorDetailsBtn}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setExpandedErrorDocId(
+                            expandedErrorDocId === document.id ? null : document.id,
+                          );
+                        }}
+                        type="button"
+                      >
+                        {expandedErrorDocId === document.id ? "Hide error details" : "View error details"}
+                      </button>
+                    ) : null}
+                  </div>
+                  {expandedErrorDocId === document.id ? (
+                    <div className={styles.errorPopover}>{document.metaLabel}</div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className={styles.fileMeta}>
+                  {document.metaLabel ??
+                    `${document.sizeLabel} · ${document.pageCount} pages${
+                      document.addedLabel ? ` · ${document.addedLabel}` : ""
+                    }`}
+                </div>
+              )}
             </div>
             <div className={styles.fileTopicRow}>
               <span className={styles.fileChunkStat}>{document.chunkCount} chunks</span>
@@ -319,12 +348,38 @@ export function PipelineView({ active }: PipelineViewProps) {
             <FileIcon />
             <div>
               <div className={styles.fileName}>{document.name}</div>
-              <div className={styles.fileCardMeta}>
-                {document.metaLabel ??
-                  `${document.sizeLabel} · ${document.pageCount} pages${
-                    document.addedLabel ? ` · ${document.addedLabel}` : ""
-                  }`}
-              </div>
+              {document.status === "error" ? (
+                <div className={styles.fileErrorBlock}>
+                  <div className={styles.fileErrorHeader}>
+                    <span className={styles.fileErrorBadge}>Ingestion failed</span>
+                    {document.metaLabel ? (
+                      <button
+                        className={styles.errorDetailsBtn}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setExpandedErrorDocId(
+                            expandedErrorDocId === document.id ? null : document.id,
+                          );
+                        }}
+                        type="button"
+                      >
+                        {expandedErrorDocId === document.id ? "Hide error details" : "View error details"}
+                      </button>
+                    ) : null}
+                  </div>
+                  {expandedErrorDocId === document.id ? (
+                    <div className={styles.errorPopover}>{document.metaLabel}</div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className={styles.fileCardMeta}>
+                  {document.metaLabel ??
+                    `${document.sizeLabel} · ${document.pageCount} pages${
+                      document.addedLabel ? ` · ${document.addedLabel}` : ""
+                    }`}
+                </div>
+              )}
             </div>
           </div>
           <StatusPill className={styles.fileStatus} label={statusLabel(document.status)} tone={statusTone(document.status)} />
@@ -357,22 +412,6 @@ export function PipelineView({ active }: PipelineViewProps) {
   return (
     <div className={cn(styles.view, active && styles.viewActive)}>
       <div className={styles.pipelineTopbar}>
-        <button
-          aria-label="Back to chat"
-          className={styles.iconBtn}
-          onClick={() => void navigate("/chat")}
-          type="button"
-        >
-          <svg fill="none" height="14" viewBox="0 0 16 16" width="14">
-            <path
-              d="M10 3L5 8L10 13"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="1.5"
-            />
-          </svg>
-        </button>
         <div className={styles.pipelineTitleGroup}>
           <h1 className={styles.pipelineTitle}>PDF pipeline</h1>
           <p className={styles.pipelineSubhead}>
@@ -380,42 +419,67 @@ export function PipelineView({ active }: PipelineViewProps) {
           </p>
         </div>
         <div className={styles.topbarSpacer} />
-        <span className={styles.collectionSummary}>
-          Collection: <strong>{activeCollectionLabel}</strong>
-        </span>
+        <AppNavTabs />
       </div>
 
       <div className={styles.pipelineBody}>
-        <SurfaceCard className={styles.collectionsSurface}>
-          <div className={styles.collectionsHeader}>
-            <SectionLabel as="h2">Collections</SectionLabel>
-            <div className={styles.collectionInsights}>
-              <span className={styles.collectionStat}>{state.knowledgeBaseSummary.indexedDocuments} docs</span>
-              <span className={styles.collectionStat}>{state.knowledgeBaseSummary.indexedChunks} chunks</span>
+        {/* Knowledge Base KPI Metrics Card */}
+        <SurfaceCard className={styles.metricsDashboardSurface}>
+          <div className={styles.metricsRow}>
+            <div className={styles.kpiCard}>
+              <span className={styles.kpiValue}>{state.knowledgeBaseSummary.indexedDocuments}</span>
+              <span className={styles.kpiLabel}>Indexed PDFs</span>
+            </div>
+            <div className={styles.kpiDivider} />
+            <div className={styles.kpiCard}>
+              <span className={styles.kpiValue}>{state.knowledgeBaseSummary.indexedChunks}</span>
+              <span className={styles.kpiLabel}>Vector Chunks</span>
+            </div>
+            <div className={styles.kpiDivider} />
+            <div className={styles.kpiCard}>
+              <span className={styles.kpiValue}>{graphSummary.topicCount}</span>
+              <span className={styles.kpiLabel}>Topic Clusters</span>
+            </div>
+            <div className={styles.kpiActionWrapper}>
+              <button
+                className={cn(styles.reclusterBtn, state.isReclustering && styles.reclusterBtnBusy)}
+                disabled={state.isReclustering || !canRecluster}
+                onClick={() => void actions.reclusterTopics()}
+                type="button"
+                title="Re-run semantic topic clustering algorithm across indexed PDFs"
+              >
+                {state.isReclustering ? (
+                  <>
+                    <span className={styles.spinnerIcon} />
+                    Re-clustering...
+                  </>
+                ) : (
+                  <>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                    </svg>
+                    Re-cluster topics
+                  </>
+                )}
+              </button>
             </div>
           </div>
-          <div className={styles.collectionRow}>
-            {collectionOptions.map((collection) => (
-              <button
-                aria-pressed={collection.id === activeCollectionId}
-                className={cn(styles.colPill, collection.id === activeCollectionId && styles.colPillActive)}
-                key={collection.id}
-                onClick={() => actions.selectCollection(collection.id)}
-                type="button"
-              >
-                {collection.label}
-              </button>
-            ))}
-          </div>
-          <div className={styles.clusterActionRow}>
-            <button
-              className={cn(styles.reclusterBtn, state.isReclustering && styles.reclusterBtnBusy)}
-              disabled={state.isReclustering || !canRecluster}
-              onClick={() => void actions.reclusterTopics()}
-              type="button"
-            >
-              {state.isReclustering ? "Re-clustering..." : "Re-cluster topics"}
-            </button>
+
+          <div className={styles.collectionSelectorStrip}>
+            <span className={styles.collectionSelectorLabel}>Active Scope:</span>
+            <div className={styles.collectionRow}>
+              {collectionOptions.map((collection) => (
+                <button
+                  aria-pressed={collection.id === activeCollectionId}
+                  className={cn(styles.colPill, collection.id === activeCollectionId && styles.colPillActive)}
+                  key={collection.id}
+                  onClick={() => actions.selectCollection(collection.id)}
+                  type="button"
+                >
+                  {collection.label}
+                </button>
+              ))}
+            </div>
           </div>
         </SurfaceCard>
 
@@ -435,7 +499,6 @@ export function PipelineView({ active }: PipelineViewProps) {
             <div
               className={cn(
                 styles.dropZone,
-                visibleDocuments.length > 0 && styles.dropZoneCompact,
                 dragOver && styles.dropZoneDragOver,
               )}
               onClick={() => fileInputRef.current?.click()}
@@ -459,20 +522,23 @@ export function PipelineView({ active }: PipelineViewProps) {
               role="button"
               tabIndex={0}
             >
-              <svg className={styles.dropIconSvg} fill="none" height="32" viewBox="0 0 32 32" width="32">
-                <path
-                  d="M16 22V10M16 10L11 15M16 10L21 15"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="1.5"
-                />
-                <path d="M6 24h20" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" />
-              </svg>
-              <div className={styles.dropTitle}>
-                {visibleDocuments.length > 0 ? "Click to upload more PDFs" : "Drop PDFs here or click to browse"}
+              <div className={styles.dropIconContainer}>
+                <svg className={styles.dropIconSvg} fill="none" height="30" viewBox="0 0 24 24" width="30" stroke="currentColor" strokeWidth="1.8">
+                  <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242M12 12v9m-4-4 4-4 4 4" />
+                </svg>
               </div>
-              <div className={styles.dropSub}>OpenDataLoader parses digital text, tables, and layout · OCR scans are not supported · Max 50 MB each</div>
+              <div className={styles.dropTitle}>
+                Drag &amp; drop PDF files here, or <span className={styles.browseLink}>Browse</span>
+              </div>
+              <p className={styles.dropSub}>
+                Digital text, tables, and layout supported · Max 50 MB per file
+              </p>
+              <div className={styles.formatBadgesRow}>
+                <span className={styles.formatBadge}>.PDF</span>
+                <span className={styles.formatBadge}>Tables Preserved</span>
+                <span className={styles.formatBadge}>Layout Aware</span>
+                <span className={styles.formatBadge}>Auto Chunking</span>
+              </div>
             </div>
           </SurfaceCard>
         </AccordionSection>
@@ -547,7 +613,7 @@ export function PipelineView({ active }: PipelineViewProps) {
                 onClick={() => void navigate("/knowledge-graph")}
                 type="button"
               >
-                Open graph
+                Open graph ➔
               </button>
             </div>
             {strongestGraphEdges.length > 0 ? (

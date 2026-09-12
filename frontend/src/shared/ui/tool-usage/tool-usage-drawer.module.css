@@ -1,0 +1,376 @@
+/* Advanced AI Chatbot Tool Activity Drawer (ChatGPT / Claude / Gemini Style) */
+
+.drawerShell {
+  margin-bottom: 12px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: hudPopIn 160ms ease;
+}
+
+/* Top-level collapsible trigger bar */
+.triggerBtn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 12px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  box-shadow: var(--shadow-soft);
+  user-select: none;
+  transition: 
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.triggerBtn:hover {
+  background: var(--surface-base);
+  border-color: var(--accent-border);
+  color: var(--text-strong);
+}
+
+.triggerBtnOpen {
+  background: var(--surface-base);
+  border-color: var(--accent-border);
+  border-bottom-left-radius: 4px;
+  border-bottom-right-radius: 4px;
+}
+
+.triggerLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.toolIconWrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.toolIconSpinning svg {
+  animation: spin 1.2s linear infinite;
+  color: var(--tech-amber);
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.triggerLabel {
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-strong);
+  letter-spacing: 0.1px;
+}
+
+.toolsCountPill {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--surface-muted);
+  color: var(--text-subtle-aa);
+}
+
+.categoryPillsGroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.categoryMiniBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.2px;
+}
+
+.badge_retrieval {
+  background: var(--surface-accent);
+  color: var(--accent);
+  border: 0.5px solid rgba(43, 76, 126, 0.2);
+}
+
+.badge_web {
+  background: var(--warning-surface);
+  color: var(--tech-amber);
+  border: 0.5px solid rgba(217, 119, 54, 0.2);
+}
+
+.badge_memory {
+  background: rgba(142, 68, 173, 0.08);
+  color: #8e44ad;
+  border: 0.5px solid rgba(142, 68, 173, 0.2);
+}
+
+.badge_scope {
+  background: var(--surface-muted);
+  color: var(--text-muted);
+}
+
+.triggerRight {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-subtle-aa);
+}
+
+.expandHintText {
+  font-size: 10px;
+}
+
+.chevronArrow {
+  transition: transform var(--transition-medium);
+  flex-shrink: 0;
+}
+
+.chevronRotated {
+  transform: rotate(90deg);
+}
+
+/* Expanded list of tool step cards */
+.toolsList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 4px 6px 14px;
+  border-left: 2px solid var(--border-strong);
+  margin-left: 8px;
+  animation: hudPopIn 160ms ease;
+}
+
+/* Individual collapsible tool step card */
+.toolStepCard {
+  background: var(--surface-base);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.toolStepCard:hover {
+  border-color: var(--accent-border);
+}
+
+.toolStepCardExpanded {
+  border-color: var(--accent-border);
+  box-shadow: var(--shadow-soft);
+}
+
+/* Tool step header (collapsible dropdown trigger) */
+.toolStepHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--surface-soft);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  user-select: none;
+  transition: background var(--transition-fast);
+  gap: 8px;
+}
+
+.toolStepHeader:hover {
+  background: var(--surface-accent);
+}
+
+.toolStepHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.toolCategoryIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.icon_retrieval {
+  background: var(--surface-accent);
+  color: var(--accent);
+}
+
+.icon_web {
+  background: var(--warning-surface);
+  color: var(--tech-amber);
+}
+
+.icon_memory {
+  background: rgba(142, 68, 173, 0.1);
+  color: #8e44ad;
+}
+
+.icon_scope {
+  background: var(--surface-muted);
+  color: var(--text-muted);
+}
+
+.toolNameBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+
+.toolNameMono {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--accent-ink);
+  letter-spacing: 0.2px;
+}
+
+.toolDisplayName {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toolStepHeaderRight {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.toolParamSnippet {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-subtle-aa);
+  background: var(--surface-base);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 0.5px solid var(--border-soft);
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toolStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1.5px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.statusSuccess {
+  background: var(--success-surface, #eef5ef);
+  color: var(--success-ink, #273b2c);
+  border: 0.5px solid rgba(40, 140, 60, 0.25);
+}
+
+.statusRunning {
+  background: var(--warning-surface);
+  color: var(--tech-amber);
+  border: 0.5px solid rgba(217, 119, 54, 0.25);
+}
+
+.stepChevron {
+  color: var(--text-subtle-aa);
+  transition: transform var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.stepChevronRotated {
+  transform: rotate(180deg);
+}
+
+/* Collapsible Dropdown Body */
+.toolStepDropdown {
+  padding: 10px 12px;
+  background: var(--surface-base);
+  border-top: 1px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: hudPopIn 140ms ease;
+}
+
+.toolSubBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.subBlockHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.subBlockTag {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  color: var(--text-subtle-aa);
+  letter-spacing: 0.5px;
+}
+
+.jsonParamsCode {
+  margin: 0;
+  padding: 6px 8px;
+  background: var(--surface-soft);
+  border: 0.5px solid var(--border-soft);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent-ink);
+  line-height: 1.4;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.resultText {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-strong);
+  background: var(--surface-soft);
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 0.5px solid var(--border-soft);
+}

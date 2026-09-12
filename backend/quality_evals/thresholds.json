@@ -1,0 +1,10 @@
+{
+  "case_pass_rate": 0.85,
+  "intent_accuracy": 1.0,
+  "context_precision": 0.7,
+  "context_recall": 0.85,
+  "citation_precision": 0.9,
+  "citation_recall": 0.85,
+  "abstention_accuracy": 0.9,
+  "category.adversarial_grounding.pass_rate": 1.0
+}

@@ -10,7 +10,7 @@ from app.core.nvidia_retrieval import (
     NVIDIA_HOSTED_BASE_URL,
     resolve_ranking_url,
 )
-from app.services.reranker_service import RerankerResponseError, parse_ranking_scores
+from app.services.providers.reranker_service import RerankerResponseError, parse_ranking_scores
 
 
 def test_hosted_endpoint_is_model_specific() -> None:
@@ -55,3 +55,4 @@ def test_ranking_scores_restore_passage_order() -> None:
 def test_invalid_ranking_contract_is_rejected(payload: object) -> None:
     with pytest.raises(RerankerResponseError):
         parse_ranking_scores(payload, passage_count=2)
+
